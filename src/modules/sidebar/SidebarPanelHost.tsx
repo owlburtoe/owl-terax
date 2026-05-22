@@ -102,22 +102,20 @@ export function SidebarPanelHost({
   onCloseTab,
   activeEditorHandle,
 }: Props) {
-  const prefs = usePreferencesStore((s) => ({
-    explorer: s.sidebarPanelExplorer,
-    sourceControl: s.sidebarPanelSourceControl,
-    tabs: s.sidebarPanelTabs,
-    search: s.sidebarPanelSearch,
-    outline: s.sidebarPanelOutline,
-    recent: s.sidebarPanelRecent,
-  }));
+  const panelExplorer = usePreferencesStore((s) => s.sidebarPanelExplorer);
+  const panelSourceControl = usePreferencesStore((s) => s.sidebarPanelSourceControl);
+  const panelTabs = usePreferencesStore((s) => s.sidebarPanelTabs);
+  const panelSearch = usePreferencesStore((s) => s.sidebarPanelSearch);
+  const panelOutline = usePreferencesStore((s) => s.sidebarPanelOutline);
+  const panelRecent = usePreferencesStore((s) => s.sidebarPanelRecent);
 
   const prefMap: Record<SidebarViewId, boolean> = {
-    explorer: prefs.explorer,
-    "source-control": prefs.sourceControl,
-    tabs: prefs.tabs,
-    search: prefs.search,
-    outline: prefs.outline,
-    recent: prefs.recent,
+    explorer: panelExplorer,
+    "source-control": panelSourceControl,
+    tabs: panelTabs,
+    search: panelSearch,
+    outline: panelOutline,
+    recent: panelRecent,
   };
 
   const enabledPanels: PanelDescriptor[] = FULL_REGISTRY.filter(
@@ -136,7 +134,7 @@ export function SidebarPanelHost({
     if (!prefMap[activeView]) {
       onSelectView(enabledPanels[0].id);
     }
-  }, [prefs, activeView, onSelectView]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [panelExplorer, panelSourceControl, panelTabs, panelSearch, panelOutline, panelRecent, activeView, onSelectView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelectView = useCallback(
     (id: SidebarViewId) => {

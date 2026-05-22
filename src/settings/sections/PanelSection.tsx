@@ -71,14 +71,21 @@ const PANELS: PanelDef[] = [
 ];
 
 export function PanelSection() {
-  const prefs = usePreferencesStore((s) => ({
-    sidebarPanelExplorer: s.sidebarPanelExplorer,
-    sidebarPanelSourceControl: s.sidebarPanelSourceControl,
-    sidebarPanelTabs: s.sidebarPanelTabs,
-    sidebarPanelSearch: s.sidebarPanelSearch,
-    sidebarPanelOutline: s.sidebarPanelOutline,
-    sidebarPanelRecent: s.sidebarPanelRecent,
-  }));
+  const sidebarPanelExplorer = usePreferencesStore((s) => s.sidebarPanelExplorer);
+  const sidebarPanelSourceControl = usePreferencesStore((s) => s.sidebarPanelSourceControl);
+  const sidebarPanelTabs = usePreferencesStore((s) => s.sidebarPanelTabs);
+  const sidebarPanelSearch = usePreferencesStore((s) => s.sidebarPanelSearch);
+  const sidebarPanelOutline = usePreferencesStore((s) => s.sidebarPanelOutline);
+  const sidebarPanelRecent = usePreferencesStore((s) => s.sidebarPanelRecent);
+
+  const prefs = {
+    sidebarPanelExplorer,
+    sidebarPanelSourceControl,
+    sidebarPanelTabs,
+    sidebarPanelSearch,
+    sidebarPanelOutline,
+    sidebarPanelRecent,
+  };
 
   const enabledCount = Object.values(prefs).filter(Boolean).length;
 
