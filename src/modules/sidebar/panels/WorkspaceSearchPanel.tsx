@@ -36,6 +36,7 @@ export function WorkspaceSearchPanel({ explorerRoot, onOpenFile }: WorkspaceSear
   const [searching, setSearching] = useState(false);
   const [truncated, setTruncated] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const genRef = useRef(0);
 
   const runSearch = useCallback(
     async (q: string) => {
@@ -44,6 +45,7 @@ export function WorkspaceSearchPanel({ explorerRoot, onOpenFile }: WorkspaceSear
         setTruncated(false);
         return;
       }
+      const gen = ++genRef.current;
       setSearching(true);
       try {
         const res = await native.grep({
@@ -52,13 +54,15 @@ export function WorkspaceSearchPanel({ explorerRoot, onOpenFile }: WorkspaceSear
           caseInsensitive: true,
           maxResults: 200,
         });
+        if (gen !== genRef.current) return;
         setResults(groupByFile(res.hits));
         setTruncated(res.truncated);
       } catch {
+        if (gen !== genRef.current) return;
         setResults([]);
         setTruncated(false);
       } finally {
-        setSearching(false);
+        if (gen === genRef.current) setSearching(false);
       }
     },
     [explorerRoot],

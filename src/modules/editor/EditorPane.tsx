@@ -50,6 +50,8 @@ export type EditorPaneHandle = {
   getOutline: () => import("@/modules/sidebar/panels/outlineExtractor").OutlineNode[];
   /** Scrolls the editor to the given 1-based line number. */
   goToLine: (line: number) => void;
+  /** Subscribe to document content changes. Returns an unsubscribe function. */
+  subscribeToDocumentChange: (cb: () => void) => () => void;
 };
 
 type Props = {
@@ -71,6 +73,7 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
     const reloadRef = useRef(reload);
     reloadRef.current = reload;
     const cmRef = useRef<ReactCodeMirrorRef>(null);
+    const docChangeListenersRef = useRef<Set<() => void>>(new Set());
     const editorThemeId = usePreferencesStore((s) => s.editorTheme);
     const vimMode = usePreferencesStore((s) => s.vimMode);
     const languageRef = useRef<string | null>(null);
@@ -120,6 +123,11 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
 
     const extensions = useMemo(
       () => [
+        EditorView.updateListener.of((update) => {
+          if (update.docChanged) {
+            docChangeListenersRef.current.forEach((cb) => cb());
+          }
+        }),
         // basicSetup is added before user extensions by @uiw/react-codemirror,
         // so we must elevate vim's precedence to win the keymap.
         vimCompartment.of(
@@ -284,6 +292,10 @@ export const EditorPane = forwardRef<EditorPaneHandle, Props>(
             effects: EditorView.scrollIntoView(lineInfo.from, { y: "center" }),
           });
           view.focus();
+        },
+        subscribeToDocumentChange: (cb: () => void) => {
+          docChangeListenersRef.current.add(cb);
+          return () => docChangeListenersRef.current.delete(cb);
         },
       }),
       [path],

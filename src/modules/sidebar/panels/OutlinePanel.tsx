@@ -38,7 +38,9 @@ export function OutlinePanel({ activeEditorHandle }: OutlinePanelProps) {
       }, 300);
     };
     refresh();
+    const unsubscribe = activeEditorHandle.subscribeToDocumentChange(refresh);
     return () => {
+      unsubscribe();
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [activeEditorHandle]);
@@ -65,7 +67,7 @@ export function OutlinePanel({ activeEditorHandle }: OutlinePanelProps) {
         const Icon = KIND_ICONS[node.kind];
         return (
           <button
-            key={i}
+            key={`${node.line}-${node.label}-${i}`}
             type="button"
             onClick={() => activeEditorHandle.goToLine(node.line)}
             style={{ paddingLeft: `${8 + (node.depth - 1) * 12}px` }}

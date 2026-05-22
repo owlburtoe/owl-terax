@@ -136,7 +136,7 @@ export function SidebarPanelHost({
     if (!prefMap[activeView]) {
       onSelectView(enabledPanels[0].id);
     }
-  }, [prefs]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [prefs, activeView, onSelectView]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSelectView = useCallback(
     (id: SidebarViewId) => {
