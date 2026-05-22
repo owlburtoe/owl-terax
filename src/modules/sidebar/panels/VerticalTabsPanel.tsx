@@ -3,6 +3,7 @@ import { cn } from "@/lib/utils";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
 import type { Tab } from "@/modules/tabs";
 import {
+  Add01Icon,
   Cancel01Icon,
   ComputerTerminal02Icon,
   GitBranchIcon,
@@ -20,6 +21,7 @@ export type VerticalTabsPanelProps = {
   activeId: number;
   onSelect: (id: number) => void;
   onClose: (id: number) => void;
+  onNew: () => void;
 };
 
 function tabIcon(tab: Tab): React.ReactNode {
@@ -47,7 +49,7 @@ function tabIcon(tab: Tab): React.ReactNode {
   return null;
 }
 
-export function VerticalTabsPanel({ tabs, activeId, onSelect, onClose }: VerticalTabsPanelProps) {
+export function VerticalTabsPanel({ tabs, activeId, onSelect, onClose, onNew }: VerticalTabsPanelProps) {
   const parentRef = useRef<HTMLDivElement>(null);
 
   const rowVirtualizer = useVirtualizer({
@@ -58,11 +60,12 @@ export function VerticalTabsPanel({ tabs, activeId, onSelect, onClose }: Vertica
   });
 
   return (
-    <div ref={parentRef} className="h-full overflow-y-auto py-1">
-      <div
-        style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: "relative" }}
-      >
-        {rowVirtualizer.getVirtualItems().map((vItem) => {
+    <div className="flex h-full min-h-0 flex-col">
+      <div ref={parentRef} className="min-h-0 flex-1 overflow-y-auto py-1">
+        <div
+          style={{ height: `${rowVirtualizer.getTotalSize()}px`, position: "relative" }}
+        >
+          {rowVirtualizer.getVirtualItems().map((vItem) => {
           const tab = tabs[vItem.index];
           if (!tab) return null;
           const isActive = tab.id === activeId;
@@ -97,8 +100,17 @@ export function VerticalTabsPanel({ tabs, activeId, onSelect, onClose }: Vertica
               </button>
             </div>
           );
-        })}
+          })}
+        </div>
       </div>
+      <button
+        type="button"
+        onClick={onNew}
+        className="flex w-full shrink-0 items-center gap-1.5 px-2 py-1.5 text-[11px] text-muted-foreground hover:bg-foreground/[0.04] hover:text-foreground"
+      >
+        <HugeiconsIcon icon={Add01Icon} size={12} strokeWidth={2} />
+        New tab
+      </button>
     </div>
   );
 }

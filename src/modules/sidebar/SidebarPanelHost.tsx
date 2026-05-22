@@ -56,6 +56,7 @@ type Props = {
   activeTabId: number;
   onSelectTab: (id: number) => void;
   onCloseTab: (id: number) => void;
+  onNewTab: () => void;
   // outline
   activeEditorHandle: EditorPaneHandle | null;
 };
@@ -100,6 +101,7 @@ export function SidebarPanelHost({
   activeTabId,
   onSelectTab,
   onCloseTab,
+  onNewTab,
   activeEditorHandle,
 }: Props) {
   const panelExplorer = usePreferencesStore((s) => s.sidebarPanelExplorer);
@@ -191,6 +193,7 @@ export function SidebarPanelHost({
           activeId={activeTabId}
           onSelect={onSelectTab}
           onClose={onCloseTab}
+          onNew={onNewTab}
         />
       ),
     },
