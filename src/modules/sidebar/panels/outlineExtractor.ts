@@ -111,14 +111,16 @@ function extractJsOutline(state: EditorState, parsed: ReturnType<typeof syntaxTr
         }
       }
 
-      if (node.name === "VariableDeclarator") {
+      // Lezer JS grammar: VariableDeclaration has VariableDefinition as a direct
+      // child (no VariableDeclarator wrapper). Covers const/let/var.
+      if (node.name === "VariableDeclaration") {
         const nameNode = node.node.getChild("VariableDefinition");
-        if (!nameNode) return; // destructuring — skip
+        if (!nameNode) return; // destructuring pattern — skip
 
         const label = state.doc.sliceString(nameNode.from, nameNode.to);
 
         if (funcDepth === 0) {
-          // File scope: only show if the value is an arrow/function expression
+          // File scope: only show arrow/function expression declarations
           // (i.e. `const Foo = () => {}`, not `const MAX = 100`)
           let child = node.node.firstChild;
           while (child) {
