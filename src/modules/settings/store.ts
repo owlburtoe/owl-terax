@@ -86,6 +86,12 @@ export type Preferences = {
   zoomLevel: number;
   agentNotifications: boolean;
   shortcuts: Record<ShortcutId, KeyBinding[]>;
+  sidebarPanelExplorer: boolean;
+  sidebarPanelSourceControl: boolean;
+  sidebarPanelTabs: boolean;
+  sidebarPanelSearch: boolean;
+  sidebarPanelOutline: boolean;
+  sidebarPanelRecent: boolean;
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -128,6 +134,12 @@ const KEY_LAST_WSL_DISTRO = "lastWslDistro";
 const KEY_ZOOM_LEVEL = "zoomLevel";
 const KEY_AGENT_NOTIFICATIONS = "agentNotifications";
 const KEY_SHORTCUTS = "shortcuts";
+const KEY_SIDEBAR_PANEL_EXPLORER = "sidebarPanelExplorer";
+const KEY_SIDEBAR_PANEL_SOURCE_CONTROL = "sidebarPanelSourceControl";
+const KEY_SIDEBAR_PANEL_TABS = "sidebarPanelTabs";
+const KEY_SIDEBAR_PANEL_SEARCH = "sidebarPanelSearch";
+const KEY_SIDEBAR_PANEL_OUTLINE = "sidebarPanelOutline";
+const KEY_SIDEBAR_PANEL_RECENT = "sidebarPanelRecent";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
@@ -183,6 +195,12 @@ export const DEFAULT_PREFERENCES: Preferences = {
   zoomLevel: 1.0,
   agentNotifications: true,
   shortcuts: {} as Record<ShortcutId, KeyBinding[]>,
+  sidebarPanelExplorer: true,
+  sidebarPanelSourceControl: true,
+  sidebarPanelTabs: true,
+  sidebarPanelSearch: false,
+  sidebarPanelOutline: false,
+  sidebarPanelRecent: false,
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -308,6 +326,18 @@ export async function loadPreferences(): Promise<Preferences> {
     shortcuts:
       get<Record<ShortcutId, KeyBinding[]>>(KEY_SHORTCUTS) ??
       DEFAULT_PREFERENCES.shortcuts,
+    sidebarPanelExplorer:
+      get<boolean>(KEY_SIDEBAR_PANEL_EXPLORER) ?? DEFAULT_PREFERENCES.sidebarPanelExplorer,
+    sidebarPanelSourceControl:
+      get<boolean>(KEY_SIDEBAR_PANEL_SOURCE_CONTROL) ?? DEFAULT_PREFERENCES.sidebarPanelSourceControl,
+    sidebarPanelTabs:
+      get<boolean>(KEY_SIDEBAR_PANEL_TABS) ?? DEFAULT_PREFERENCES.sidebarPanelTabs,
+    sidebarPanelSearch:
+      get<boolean>(KEY_SIDEBAR_PANEL_SEARCH) ?? DEFAULT_PREFERENCES.sidebarPanelSearch,
+    sidebarPanelOutline:
+      get<boolean>(KEY_SIDEBAR_PANEL_OUTLINE) ?? DEFAULT_PREFERENCES.sidebarPanelOutline,
+    sidebarPanelRecent:
+      get<boolean>(KEY_SIDEBAR_PANEL_RECENT) ?? DEFAULT_PREFERENCES.sidebarPanelRecent,
   };
 }
 
@@ -506,6 +536,25 @@ export async function resetShortcuts(): Promise<void> {
   await writePref(KEY_SHORTCUTS, DEFAULT_PREFERENCES.shortcuts);
 }
 
+export async function setSidebarPanelExplorer(value: boolean): Promise<void> {
+  await writePref(KEY_SIDEBAR_PANEL_EXPLORER, value);
+}
+export async function setSidebarPanelSourceControl(value: boolean): Promise<void> {
+  await writePref(KEY_SIDEBAR_PANEL_SOURCE_CONTROL, value);
+}
+export async function setSidebarPanelTabs(value: boolean): Promise<void> {
+  await writePref(KEY_SIDEBAR_PANEL_TABS, value);
+}
+export async function setSidebarPanelSearch(value: boolean): Promise<void> {
+  await writePref(KEY_SIDEBAR_PANEL_SEARCH, value);
+}
+export async function setSidebarPanelOutline(value: boolean): Promise<void> {
+  await writePref(KEY_SIDEBAR_PANEL_OUTLINE, value);
+}
+export async function setSidebarPanelRecent(value: boolean): Promise<void> {
+  await writePref(KEY_SIDEBAR_PANEL_RECENT, value);
+}
+
 export type PrefKey = keyof Preferences;
 
 /** Subscribe to changes from any window (settings → main). */
@@ -551,6 +600,12 @@ export async function onPreferencesChange(
     [KEY_ZOOM_LEVEL]: "zoomLevel",
     [KEY_AGENT_NOTIFICATIONS]: "agentNotifications",
     [KEY_SHORTCUTS]: "shortcuts",
+    [KEY_SIDEBAR_PANEL_EXPLORER]: "sidebarPanelExplorer",
+    [KEY_SIDEBAR_PANEL_SOURCE_CONTROL]: "sidebarPanelSourceControl",
+    [KEY_SIDEBAR_PANEL_TABS]: "sidebarPanelTabs",
+    [KEY_SIDEBAR_PANEL_SEARCH]: "sidebarPanelSearch",
+    [KEY_SIDEBAR_PANEL_OUTLINE]: "sidebarPanelOutline",
+    [KEY_SIDEBAR_PANEL_RECENT]: "sidebarPanelRecent",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().
