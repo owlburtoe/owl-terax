@@ -49,7 +49,7 @@ import {
 import { getLaunchDir } from "@/lib/launchDir";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { useZoom } from "@/lib/useZoom";
-import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
+import { type FileExplorerHandle } from "@/modules/explorer";
 import {
   listenFsChanged,
   parentDir,
@@ -72,11 +72,8 @@ import {
   type ShortcutHandlers,
   type ShortcutId,
 } from "@/modules/shortcuts";
-import { SidebarRail, type SidebarViewId } from "@/modules/sidebar";
-import {
-  SourceControlPanel,
-  useSourceControl,
-} from "@/modules/source-control";
+import { SidebarPanelHost, type SidebarViewId } from "@/modules/sidebar";
+import { useSourceControl } from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
 import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
 import {
@@ -150,9 +147,17 @@ function readSidebarWidth(): number {
 }
 
 function readSidebarView(): SidebarViewId {
+  const VALID: SidebarViewId[] = [
+    "explorer",
+    "source-control",
+    "tabs",
+    "search",
+    "outline",
+    "recent",
+  ];
   try {
     const stored = window.localStorage.getItem(SIDEBAR_VIEW_STORAGE_KEY);
-    if (stored === "explorer" || stored === "source-control") return stored;
+    if (stored && (VALID as string[]).includes(stored)) return stored as SidebarViewId;
   } catch {
     // ignore
   }
@@ -238,23 +243,6 @@ export default function App() {
     if (p.getSize().asPercentage <= 0) p.expand();
     else p.collapse();
   }, []);
-  const cycleSidebarView = useCallback(
-    (view: SidebarViewId) => {
-      const panel = sidebarRef.current;
-      const collapsed = panel ? panel.getSize().asPercentage <= 0 : false;
-      if (collapsed) {
-        if (panel) panel.resize(`${sidebarWidthRef.current}px`);
-        if (view !== sidebarView) persistSidebarView(view);
-        return;
-      }
-      if (view === sidebarView) {
-        panel?.collapse();
-        return;
-      }
-      persistSidebarView(view);
-    },
-    [persistSidebarView, sidebarView],
-  );
   const persistSidebarWidth = useCallback((next: number) => {
     sidebarWidthRef.current = next;
     if (sidebarWidthWriteTimerRef.current) {
@@ -405,6 +393,7 @@ export default function App() {
   useEffect(() => {
     if (activeSessionId) firePendingReviewForSession(activeSessionId);
   }, [activeSessionId]);
+  const sidebarPanelTabs = usePreferencesStore((s) => s.sidebarPanelTabs);
   const lmstudioModelId = usePreferencesStore((s) => s.lmstudioModelId);
   const lmstudioBaseURL = usePreferencesStore((s) => s.lmstudioBaseURL);
   const mlxModelId = usePreferencesStore((s) => s.mlxModelId);
@@ -954,8 +943,17 @@ export default function App() {
   const sourceControl = useSourceControl(sourceControlPath, true);
 
   const toggleSourceControl = useCallback(() => {
-    cycleSidebarView("source-control");
-  }, [cycleSidebarView]);
+    const panel = sidebarRef.current;
+    const collapsed = panel ? panel.getSize().asPercentage <= 0 : false;
+    if (collapsed) {
+      if (panel) panel.resize(`${sidebarWidthRef.current}px`);
+      persistSidebarView("source-control");
+    } else if (sidebarView === "source-control") {
+      panel?.collapse();
+    } else {
+      persistSidebarView("source-control");
+    }
+  }, [sidebarView, persistSidebarView, sidebarRef, sidebarWidthRef]);
 
   const openGitGraphFromContext = useCallback(async () => {
     const known = sourceControl.hasRepo ? sourceControl.repo : null;
@@ -1412,6 +1410,7 @@ export default function App() {
             onOpenSettings={() => void openSettingsWindow()}
             searchTarget={searchTarget}
             searchRef={searchInlineRef}
+            showTabBar={!sidebarPanelTabs}
           />
 
           <main className="zoom-content flex min-h-0 flex-1 flex-col">
@@ -1432,31 +1431,27 @@ export default function App() {
                 }}
               >
                 <div className="flex h-full min-h-0 flex-col border-r border-border/60 bg-card">
-                  <div className="min-h-0 flex-1">
-                    {sidebarView === "explorer" ? (
-                      <FileExplorer
-                        ref={explorerRef}
-                        rootPath={explorerRoot}
-                        onOpenFile={handleOpenFile}
-                        onPathRenamed={handlePathRenamed}
-                        onPathDeleted={handlePathDeleted}
-                        onRevealInTerminal={cdInNewTab}
-                        onAttachToAgent={handleAttachFileToAgent}
-                        onOpenMarkdownPreview={openMarkdownPreview}
-                      />
-                    ) : (
-                      <SourceControlPanel
-                        open
-                        sourceControl={sourceControl}
-                        onOpenDiff={openGitDiffTab}
-                        onOpenGitGraph={openGitGraphFromContext}
-                      />
-                    )}
-                  </div>
-                  <SidebarRail
+                  <SidebarPanelHost
                     activeView={sidebarView}
                     onSelectView={persistSidebarView}
-                    changedCount={sourceControl.changedCount}
+                    sidebarRef={sidebarRef}
+                    sidebarWidthRef={sidebarWidthRef}
+                    explorerRef={explorerRef}
+                    explorerRoot={explorerRoot}
+                    onOpenFile={handleOpenFile}
+                    onPathRenamed={handlePathRenamed}
+                    onPathDeleted={handlePathDeleted}
+                    onRevealInTerminal={cdInNewTab}
+                    onAttachToAgent={handleAttachFileToAgent}
+                    onOpenMarkdownPreview={openMarkdownPreview}
+                    sourceControl={sourceControl}
+                    onOpenDiff={openGitDiffTab}
+                    onOpenGitGraph={openGitGraphFromContext}
+                    tabs={tabs}
+                    activeTabId={activeId}
+                    onSelectTab={setActiveId}
+                    onCloseTab={handleClose}
+                    activeEditorHandle={activeEditorHandle}
                   />
                 </div>
               </ResizablePanel>
