@@ -4,7 +4,7 @@ import { rust } from "@codemirror/lang-rust";
 import { markdown } from "@codemirror/lang-markdown";
 import { go } from "@codemirror/lang-go";
 import { EditorState } from "@codemirror/state";
-import { syntaxTree } from "@codemirror/language";
+import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 
 export type OutlineNode = {
   label: string;
@@ -70,7 +70,9 @@ export function extractOutline(source: string, ext: string): OutlineNode[] {
   if (!grammar) return [];
 
   const state = EditorState.create({ doc: source, extensions: [grammar()] });
-  const parsed = syntaxTree(state);
+  // ensureSyntaxTree forces a full parse (Lezer is lazy by default).
+  // 500ms timeout is generous for the largest files; fall back to partial tree.
+  const parsed = ensureSyntaxTree(state, state.doc.length, 500) ?? syntaxTree(state);
   const nodes: OutlineNode[] = [];
 
   const isMarkdown = ext === "md" || ext === "mdx";
