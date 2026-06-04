@@ -56,8 +56,11 @@ import {
 
 type Props = {
   open: boolean;
+  hasFolder: boolean;
+  isRestoring: boolean;
   sourceControl: SourceControlSummary;
   onOpenGitGraph?: () => void;
+  onOpenFolder?: () => void;
   onOpenDiff: (input: {
     path: string;
     repoRoot: string;
@@ -128,11 +131,19 @@ function checkboxValue(state: CheckState): boolean | "indeterminate" {
 
 export const SourceControlPanel = memo(function SourceControlPanel({
   open,
+  hasFolder,
+  isRestoring,
   sourceControl,
   onOpenGitGraph,
+  onOpenFolder,
   onOpenDiff,
 }: Props) {
-  const scm = useSourceControlPanel(open, sourceControl, onOpenDiff);
+  const scm = useSourceControlPanel(
+    open,
+    { hasFolder, isRestoring },
+    sourceControl,
+    onOpenDiff,
+  );
   const refreshAnimationRef = useRef<number | null>(null);
   const [refreshAnimating, setRefreshAnimating] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -529,10 +540,24 @@ export const SourceControlPanel = memo(function SourceControlPanel({
           <PanelCenter title="Loading repository" />
         ) : null}
 
+        {scm.panelState === "no-folder" ? (
+          <PanelCenter
+            title="No folder opened"
+            body="Open a folder to start working in Terax."
+            action={
+              onOpenFolder ? (
+                <Button size="sm" onClick={() => onOpenFolder()}>
+                  Open Folder
+                </Button>
+              ) : undefined
+            }
+          />
+        ) : null}
+
         {scm.panelState === "no-repo" ? (
           <PanelCenter
             title="No repository"
-            body="The active workspace is not inside a Git repository."
+            body="This folder is not inside a Git repository."
           />
         ) : null}
 
