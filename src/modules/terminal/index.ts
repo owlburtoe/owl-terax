@@ -7,6 +7,7 @@ export {
   whenSessionReady,
   writeToSession,
 } from "./lib/useTerminalSession";
+export { focusTerminalTabAfterOpen } from "./lib/focusTerminalTabAfterOpen";
 export {
   findLeafCwd,
   hasLeaf,
