@@ -226,8 +226,22 @@ export default function App() {
   const explorerReturnFocusRef = useRef<HTMLElement | null>(null);
 
   const sidebarRef = useRef<PanelImperativeHandle | null>(null);
+  const sidebarDomRef = useRef<HTMLDivElement | null>(null);
   const sidebarWidthRef = useRef(readSidebarWidth());
   const sidebarWidthWriteTimerRef = useRef(0);
+
+  useEffect(() => {
+    const el = sidebarDomRef.current;
+    if (!el) return;
+    const update = () => {
+      const w = Math.round(el.getBoundingClientRect().width);
+      document.documentElement.style.setProperty("--sidebar-width", `${w}px`);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
   const [sidebarView, setSidebarViewState] = useState<SidebarViewId>(readSidebarView);
   const persistSidebarView = useCallback((view: SidebarViewId) => {
     setSidebarViewState(view);
@@ -1429,10 +1443,18 @@ export default function App() {
                 collapsible
                 collapsedSize={0}
                 onResize={(size) => {
-                  if (size.inPixels > 0) persistSidebarWidth(size.inPixels);
+                  const px = Math.round(size.inPixels);
+                  document.documentElement.style.setProperty(
+                    "--sidebar-width",
+                    `${px}px`,
+                  );
+                  if (px > 0) persistSidebarWidth(px);
                 }}
               >
-                <div className="flex h-full min-h-0 flex-col border-r border-border/60 bg-card">
+                <div
+                  ref={sidebarDomRef}
+                  className="flex h-full min-h-0 flex-col border-r border-border/60 bg-card"
+                >
                   <SidebarPanelHost
                     activeView={sidebarView}
                     onSelectView={persistSidebarView}

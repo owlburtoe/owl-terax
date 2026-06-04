@@ -120,11 +120,25 @@ export function Header({
     <div
       ref={rootRef}
       data-tauri-drag-region
-      className={`flex h-10 shrink-0 items-center gap-2 border-b border-border/60 bg-card select-none ${
-        IS_MAC ? "pr-2 pl-20" : "pr-0 pl-2"
-      }`}
+      className="relative grid h-10 shrink-0 border-b border-border/60 bg-card select-none"
+      style={{
+        // Left section mirrors the sidebar width so the divider lines up with
+        // the sidebar's right border. The sidebar lives inside `.zoom-content`
+        // (zoom: var(--app-zoom)) but this header does not, so the stored
+        // (unzoomed) --sidebar-width must be scaled by --app-zoom to match the
+        // sidebar's *rendered* width. The 140px floor stays unscaled — it sizes
+        // the header's own (unzoomed) controls and keeps the toggle reachable
+        // when the sidebar is collapsed (var → 0).
+        gridTemplateColumns:
+          "max(calc(var(--sidebar-width, 260px) * var(--app-zoom, 1)), 140px) 1fr",
+      }}
     >
-      <div className="flex shrink-0 items-center gap-0.5">
+      <div
+        className={`flex h-full items-center gap-0.5 overflow-hidden ${
+          IS_MAC ? "pl-20" : "pl-2"
+        }`}
+        data-tauri-drag-region
+      >
         <Button
           onClick={onToggleSidebar}
           title="Toggle sidebar"
@@ -177,56 +191,53 @@ export function Header({
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {!IS_MAC && <NotificationBell
-            onActivate={onActivateAgent}
-            onActivateLocal={onActivateLocalAgent}
-          />}
-      </div>
-
-      {!IS_MAC && <span className="mx-1 h-5 w-px shrink-0 bg-border" />}
-
-      {IS_MAC && <span className="mr-1 h-full w-px shrink-0 bg-border" />}
-
-      {showTabBar ? (
-        <div
-          className="flex min-w-0 flex-1 items-center gap-2"
-          data-tauri-drag-region
-        >
-          <TabBar
-            tabs={tabs}
-            activeId={activeId}
-            onSelect={onSelect}
-            onNew={onNew}
-            onNewPrivate={onNewPrivate}
-            onNewPreview={onNewPreview}
-            onNewEditor={onNewEditor}
-            onNewGitGraph={onNewGitGraph}
-            onClose={onClose}
-            onPin={onPin}
-            compact={compact}
-          />
-          <div data-tauri-drag-region className="h-full min-w-2 flex-1" />
-        </div>
-      ) : (
-        <div
-          className="h-full min-w-2 flex-1"
-          data-tauri-drag-region
-        />
-      )}
-
-      <SearchInline ref={searchRef} target={searchTarget} compact={compact} />
-
-      {IS_MAC && (
-        <>
+        {!IS_MAC && (
           <NotificationBell
             onActivate={onActivateAgent}
             onActivateLocal={onActivateLocalAgent}
           />
-          {settingsButton}
-        </>
-      )}
+        )}
+      </div>
 
-      {!IS_MAC && settingsButton}
+      <div
+        className="flex h-full min-w-0 items-center gap-2 border-l border-border/60 pr-2"
+        data-tauri-drag-region
+      >
+        {showTabBar ? (
+          <>
+            <TabBar
+              tabs={tabs}
+              activeId={activeId}
+              onSelect={onSelect}
+              onNew={onNew}
+              onNewPrivate={onNewPrivate}
+              onNewPreview={onNewPreview}
+              onNewEditor={onNewEditor}
+              onNewGitGraph={onNewGitGraph}
+              onClose={onClose}
+              onPin={onPin}
+              compact={compact}
+            />
+            <div data-tauri-drag-region className="h-full min-w-2 flex-1" />
+          </>
+        ) : (
+          <div className="h-full min-w-2 flex-1" data-tauri-drag-region />
+        )}
+
+        <SearchInline ref={searchRef} target={searchTarget} compact={compact} />
+
+        {IS_MAC && (
+          <>
+            <NotificationBell
+              onActivate={onActivateAgent}
+              onActivateLocal={onActivateLocalAgent}
+            />
+            {settingsButton}
+          </>
+        )}
+
+        {!IS_MAC && settingsButton}
+      </div>
 
       {USE_CUSTOM_WINDOW_CONTROLS && (
         <>
