@@ -10,6 +10,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from "@/components/ui/resizable";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -31,7 +36,7 @@ import {
   Download01Icon,
   FolderCloudIcon,
   FolderGitTwoIcon,
-  GitBranchIcon,
+  LinkSquare02Icon,
   Refresh01Icon,
   RemoveSquareIcon,
 } from "@hugeicons/core-free-icons";
@@ -47,6 +52,12 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import {
+  setSidebarScmGraphCollapsed,
+  setSidebarScmGraphSize,
+} from "@/modules/settings/store";
+import { SourceControlGraph } from "./SourceControlGraph";
 import type { SourceControlSummary } from "./useSourceControl";
 import {
   useSourceControlPanel,
@@ -150,10 +161,42 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   const containerRef = useRef<HTMLDivElement>(null);
   const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
 
+  const prefsHydrated = usePreferencesStore((s) => s.hydrated);
+  const graphSize = usePreferencesStore((s) => s.sidebarScmGraphSize);
+  const graphCollapsed = usePreferencesStore((s) => s.sidebarScmGraphCollapsed);
+  const graphSizeWriteTimerRef = useRef(0);
+
+  const handleGraphResize = useCallback(
+    (
+      size: { asPercentage: number },
+      _id: string | number | undefined,
+      prev: { asPercentage: number } | undefined,
+    ) => {
+      if (prev === undefined) return;
+      const pct = Math.round(size.asPercentage);
+      if (pct <= 0) return;
+      if (graphSizeWriteTimerRef.current) {
+        window.clearTimeout(graphSizeWriteTimerRef.current);
+      }
+      graphSizeWriteTimerRef.current = window.setTimeout(() => {
+        graphSizeWriteTimerRef.current = 0;
+        void setSidebarScmGraphSize(pct);
+      }, 250);
+    },
+    [],
+  );
+
+  const toggleGraphCollapsed = useCallback(() => {
+    void setSidebarScmGraphCollapsed(!graphCollapsed);
+  }, [graphCollapsed]);
+
   useEffect(() => {
     return () => {
       if (refreshAnimationRef.current) {
         window.clearTimeout(refreshAnimationRef.current);
+      }
+      if (graphSizeWriteTimerRef.current) {
+        window.clearTimeout(graphSizeWriteTimerRef.current);
       }
     };
   }, []);
@@ -406,6 +449,67 @@ export const SourceControlPanel = memo(function SourceControlPanel({
 
   const fetchBusy = sourceControl.busyAction === "fetch";
   const pullBusy = sourceControl.busyAction === "pull";
+  const repoRoot = scm.repo?.repoRoot ?? null;
+
+  const changesArea = scm.allClean ? (
+    <CleanTreeHint repoLabel={repoLabel} />
+  ) : (
+    <div
+      ref={containerRef}
+      tabIndex={0}
+      role="listbox"
+      aria-label="Changed files"
+      aria-activedescendant={
+        focusedRowKey ? `scm-row-${focusedRowKey}` : undefined
+      }
+      onKeyDown={handlePanelKeyDown}
+      className="relative min-h-0 flex-1 outline-none focus-visible:ring-1 focus-visible:ring-primary/30"
+    >
+      <div
+        ref={scrollRef}
+        className="h-full overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]"
+      >
+        <div
+          style={{
+            height: virtualizer.getTotalSize(),
+            position: "relative",
+            width: "100%",
+          }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const row = rows[virtualRow.index];
+            if (!row) return null;
+            return (
+              <div
+                key={virtualRow.key}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  height: virtualRow.size,
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                <RowRenderer
+                  row={row}
+                  focused={focusedRowKey === row.key}
+                  selectedPath={scm.selected?.path ?? null}
+                  actionBusy={scm.actionBusy}
+                  headerCheckState={scm.headerCheckState}
+                  onFocusRow={setFocusedRowKey}
+                  onToggleAll={scm.toggleAll}
+                  onSelectFile={scm.selectFile}
+                  onToggleStageFile={scm.toggleStageFile}
+                  onDiscardFile={scm.requestDiscardFile}
+                />
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
 
   return (
     <TooltipProvider delayDuration={800} skipDelayDuration={300}>
@@ -513,28 +617,6 @@ export const SourceControlPanel = memo(function SourceControlPanel({
             </IconActionButton>
           </div>
         </header>
-
-        {onOpenGitGraph ? (
-          <button
-            type="button"
-            onClick={() => onOpenGitGraph()}
-            className="group flex shrink-0 cursor-pointer items-center gap-2 border-b border-border/40 px-3 py-2 text-left text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
-          >
-            <HugeiconsIcon
-              icon={GitBranchIcon}
-              size={13}
-              strokeWidth={1.85}
-              className="shrink-0"
-            />
-            <span className="flex-1 text-[12px] font-medium">Commit Graph</span>
-            <HugeiconsIcon
-              icon={ArrowRight01Icon}
-              size={12}
-              strokeWidth={2}
-              className="shrink-0 opacity-50 transition-transform group-hover:translate-x-0.5"
-            />
-          </button>
-        ) : null}
 
         {scm.panelState === "loading" ? (
           <PanelCenter title="Loading repository" />
@@ -712,64 +794,49 @@ export const SourceControlPanel = memo(function SourceControlPanel({
               <CommitFeedback feedback={footerFeedback} />
             </div>
 
-            {scm.allClean ? (
-              <CleanTreeHint repoLabel={repoLabel} />
-            ) : (
-              <div
-                ref={containerRef}
-                tabIndex={0}
-                role="listbox"
-                aria-label="Changed files"
-                aria-activedescendant={
-                  focusedRowKey ? `scm-row-${focusedRowKey}` : undefined
-                }
-                onKeyDown={handlePanelKeyDown}
-                className="relative min-h-0 flex-1 outline-none focus-visible:ring-1 focus-visible:ring-primary/30"
-              >
-                <div
-                  ref={scrollRef}
-                  className="h-full overflow-y-auto overflow-x-hidden [scrollbar-gutter:stable]"
-                >
-                  <div
-                    style={{
-                      height: virtualizer.getTotalSize(),
-                      position: "relative",
-                      width: "100%",
-                    }}
-                  >
-                    {virtualizer.getVirtualItems().map((virtualRow) => {
-                      const row = rows[virtualRow.index];
-                      if (!row) return null;
-                      return (
-                        <div
-                          key={virtualRow.key}
-                          style={{
-                            position: "absolute",
-                            top: 0,
-                            left: 0,
-                            width: "100%",
-                            height: virtualRow.size,
-                            transform: `translateY(${virtualRow.start}px)`,
-                          }}
-                        >
-                          <RowRenderer
-                            row={row}
-                            focused={focusedRowKey === row.key}
-                            selectedPath={scm.selected?.path ?? null}
-                            actionBusy={scm.actionBusy}
-                            headerCheckState={scm.headerCheckState}
-                            onFocusRow={setFocusedRowKey}
-                            onToggleAll={scm.toggleAll}
-                            onSelectFile={scm.selectFile}
-                            onToggleStageFile={scm.toggleStageFile}
-                            onDiscardFile={scm.requestDiscardFile}
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
+            {!prefsHydrated || !repoRoot ? (
+              <div className="flex min-h-0 flex-1 flex-col">{changesArea}</div>
+            ) : graphCollapsed ? (
+              <div className="flex min-h-0 flex-1 flex-col">
+                {changesArea}
+                <GraphSectionHeader
+                  collapsed
+                  onToggle={toggleGraphCollapsed}
+                  onOpenGitGraph={onOpenGitGraph}
+                />
               </div>
+            ) : (
+              <ResizablePanelGroup
+                orientation="vertical"
+                className="min-h-0 flex-1"
+              >
+                <ResizablePanel id="scm-changes" minSize="20%">
+                  <div className="flex h-full min-h-0 flex-col">
+                    {changesArea}
+                  </div>
+                </ResizablePanel>
+                <ResizableHandle />
+                <ResizablePanel
+                  id="scm-graph"
+                  defaultSize={`${graphSize}%`}
+                  minSize="15%"
+                  onResize={handleGraphResize}
+                >
+                  <div className="flex h-full min-h-0 flex-col">
+                    <GraphSectionHeader
+                      collapsed={false}
+                      onToggle={toggleGraphCollapsed}
+                      onOpenGitGraph={onOpenGitGraph}
+                    />
+                    <div className="min-h-0 flex-1">
+                      <SourceControlGraph
+                        repoRoot={repoRoot}
+                        onOpenGitGraph={onOpenGitGraph}
+                      />
+                    </div>
+                  </div>
+                </ResizablePanel>
+              </ResizablePanelGroup>
             )}
           </>
         ) : null}
@@ -844,6 +911,46 @@ function CleanTreeHint({ repoLabel }: { repoLabel: string }) {
       <div className="text-[10.5px] leading-snug text-muted-foreground">
         on <span className="font-mono text-foreground/80">{repoLabel}</span>
       </div>
+    </div>
+  );
+}
+
+function GraphSectionHeader({
+  collapsed,
+  onToggle,
+  onOpenGitGraph,
+}: {
+  collapsed: boolean;
+  onToggle: () => void;
+  onOpenGitGraph?: () => void;
+}) {
+  return (
+    <div className="flex h-7 shrink-0 items-center gap-1 border-t border-border/40 bg-card/40 pl-1.5 pr-1.5">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={!collapsed}
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-1 rounded text-left text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <HugeiconsIcon
+          icon={collapsed ? ArrowRight01Icon : ArrowDown01Icon}
+          size={12}
+          strokeWidth={2}
+          className="shrink-0 opacity-70"
+        />
+        <span className="text-[10.5px] font-semibold uppercase tracking-[0.16em]">
+          Graph
+        </span>
+      </button>
+      {onOpenGitGraph ? (
+        <IconActionButton
+          label="Open full commit graph"
+          side="top"
+          onClick={onOpenGitGraph}
+        >
+          <HugeiconsIcon icon={LinkSquare02Icon} size={12} strokeWidth={1.9} />
+        </IconActionButton>
+      ) : null}
     </div>
   );
 }
