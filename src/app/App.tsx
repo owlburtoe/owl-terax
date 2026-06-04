@@ -589,7 +589,6 @@ export default function App() {
 
   const { inheritedCwdForNewTab } = useWorkspaceCwd(
     activeTab,
-    tabs,
     launchCwd ?? home,
     defaultTerminalCwd || null,
   );
