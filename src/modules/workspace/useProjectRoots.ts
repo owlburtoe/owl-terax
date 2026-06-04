@@ -34,6 +34,7 @@ export function useProjectRoots(): ProjectRoots {
   const [roots, setRoots] = useState<string[]>([]);
   const [isRestoring, setIsRestoring] = useState(true);
   const mounted = useRef(true);
+  const openedByUser = useRef(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -51,8 +52,11 @@ export function useProjectRoots(): ProjectRoots {
       const candidates = resolveLaunchRoots({ cliDir, restoredRoots });
       const authorized = (await authorizeAll(candidates)).slice(0, 1);
       if (cancelled) return;
-      setRoots(authorized);
       setIsRestoring(false);
+      // If the user opened a folder during the async restore window, don't
+      // clobber their choice.
+      if (openedByUser.current) return;
+      setRoots(authorized);
       // Persist the cleaned set: promotes a CLI arg, or drops a now-missing
       // persisted root so it isn't retried forever.
       await setProjectRoots(authorized);
@@ -77,6 +81,7 @@ export function useProjectRoots(): ProjectRoots {
       return;
     }
     if (!mounted.current) return;
+    openedByUser.current = true;
     const next = [canonical];
     setRoots(next);
     await setProjectRoots(next);
