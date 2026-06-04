@@ -92,6 +92,8 @@ export type Preferences = {
   sidebarPanelSearch: boolean;
   sidebarPanelOutline: boolean;
   sidebarPanelRecent: boolean;
+  sidebarScmGraphSize: number;
+  sidebarScmGraphCollapsed: boolean;
   projectRoots: string[];
 };
 
@@ -141,7 +143,13 @@ const KEY_SIDEBAR_PANEL_TABS = "sidebarPanelTabs";
 const KEY_SIDEBAR_PANEL_SEARCH = "sidebarPanelSearch";
 const KEY_SIDEBAR_PANEL_OUTLINE = "sidebarPanelOutline";
 const KEY_SIDEBAR_PANEL_RECENT = "sidebarPanelRecent";
+const KEY_SIDEBAR_SCM_GRAPH_SIZE = "sidebarScmGraphSize";
+const KEY_SIDEBAR_SCM_GRAPH_COLLAPSED = "sidebarScmGraphCollapsed";
 const KEY_PROJECT_ROOTS = "projectRoots";
+
+export const SCM_GRAPH_SIZE_DEFAULT = 35;
+export const SCM_GRAPH_SIZE_MIN = 15;
+export const SCM_GRAPH_SIZE_MAX = 80;
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
@@ -203,6 +211,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
   sidebarPanelSearch: false,
   sidebarPanelOutline: false,
   sidebarPanelRecent: false,
+  sidebarScmGraphSize: SCM_GRAPH_SIZE_DEFAULT,
+  sidebarScmGraphCollapsed: false,
   projectRoots: [],
 };
 
@@ -341,6 +351,13 @@ export async function loadPreferences(): Promise<Preferences> {
       get<boolean>(KEY_SIDEBAR_PANEL_OUTLINE) ?? DEFAULT_PREFERENCES.sidebarPanelOutline,
     sidebarPanelRecent:
       get<boolean>(KEY_SIDEBAR_PANEL_RECENT) ?? DEFAULT_PREFERENCES.sidebarPanelRecent,
+    sidebarScmGraphSize: clampScmGraphSize(
+      get<number>(KEY_SIDEBAR_SCM_GRAPH_SIZE) ??
+        DEFAULT_PREFERENCES.sidebarScmGraphSize,
+    ),
+    sidebarScmGraphCollapsed:
+      get<boolean>(KEY_SIDEBAR_SCM_GRAPH_COLLAPSED) ??
+      DEFAULT_PREFERENCES.sidebarScmGraphCollapsed,
     projectRoots:
       get<string[]>(KEY_PROJECT_ROOTS) ?? DEFAULT_PREFERENCES.projectRoots,
   };
@@ -560,6 +577,21 @@ export async function setSidebarPanelRecent(value: boolean): Promise<void> {
   await writePref(KEY_SIDEBAR_PANEL_RECENT, value);
 }
 
+function clampScmGraphSize(value: number): number {
+  if (!Number.isFinite(value)) return SCM_GRAPH_SIZE_DEFAULT;
+  return Math.min(SCM_GRAPH_SIZE_MAX, Math.max(SCM_GRAPH_SIZE_MIN, value));
+}
+
+export async function setSidebarScmGraphSize(value: number): Promise<void> {
+  await writePref(KEY_SIDEBAR_SCM_GRAPH_SIZE, clampScmGraphSize(value));
+}
+
+export async function setSidebarScmGraphCollapsed(
+  value: boolean,
+): Promise<void> {
+  await writePref(KEY_SIDEBAR_SCM_GRAPH_COLLAPSED, value);
+}
+
 export async function setProjectRoots(value: string[]): Promise<void> {
   await writePref(KEY_PROJECT_ROOTS, value);
 }
@@ -615,6 +647,8 @@ export async function onPreferencesChange(
     [KEY_SIDEBAR_PANEL_SEARCH]: "sidebarPanelSearch",
     [KEY_SIDEBAR_PANEL_OUTLINE]: "sidebarPanelOutline",
     [KEY_SIDEBAR_PANEL_RECENT]: "sidebarPanelRecent",
+    [KEY_SIDEBAR_SCM_GRAPH_SIZE]: "sidebarScmGraphSize",
+    [KEY_SIDEBAR_SCM_GRAPH_COLLAPSED]: "sidebarScmGraphCollapsed",
     [KEY_PROJECT_ROOTS]: "projectRoots",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
