@@ -92,6 +92,7 @@ export type Preferences = {
   sidebarPanelSearch: boolean;
   sidebarPanelOutline: boolean;
   sidebarPanelRecent: boolean;
+  projectRoots: string[];
 };
 
 const STORE_PATH = "terax-settings.json";
@@ -140,6 +141,7 @@ const KEY_SIDEBAR_PANEL_TABS = "sidebarPanelTabs";
 const KEY_SIDEBAR_PANEL_SEARCH = "sidebarPanelSearch";
 const KEY_SIDEBAR_PANEL_OUTLINE = "sidebarPanelOutline";
 const KEY_SIDEBAR_PANEL_RECENT = "sidebarPanelRecent";
+const KEY_PROJECT_ROOTS = "projectRoots";
 
 export const TERMINAL_FONT_SIZE_DEFAULT = 14;
 export const TERMINAL_FONT_SIZE_MIN = 8;
@@ -201,6 +203,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   sidebarPanelSearch: false,
   sidebarPanelOutline: false,
   sidebarPanelRecent: false,
+  projectRoots: [],
 };
 
 const store = new LazyStore(STORE_PATH, { defaults: {}, autoSave: 200 });
@@ -338,6 +341,8 @@ export async function loadPreferences(): Promise<Preferences> {
       get<boolean>(KEY_SIDEBAR_PANEL_OUTLINE) ?? DEFAULT_PREFERENCES.sidebarPanelOutline,
     sidebarPanelRecent:
       get<boolean>(KEY_SIDEBAR_PANEL_RECENT) ?? DEFAULT_PREFERENCES.sidebarPanelRecent,
+    projectRoots:
+      get<string[]>(KEY_PROJECT_ROOTS) ?? DEFAULT_PREFERENCES.projectRoots,
   };
 }
 
@@ -555,6 +560,10 @@ export async function setSidebarPanelRecent(value: boolean): Promise<void> {
   await writePref(KEY_SIDEBAR_PANEL_RECENT, value);
 }
 
+export async function setProjectRoots(value: string[]): Promise<void> {
+  await writePref(KEY_PROJECT_ROOTS, value);
+}
+
 export type PrefKey = keyof Preferences;
 
 /** Subscribe to changes from any window (settings → main). */
@@ -606,6 +615,7 @@ export async function onPreferencesChange(
     [KEY_SIDEBAR_PANEL_SEARCH]: "sidebarPanelSearch",
     [KEY_SIDEBAR_PANEL_OUTLINE]: "sidebarPanelOutline",
     [KEY_SIDEBAR_PANEL_RECENT]: "sidebarPanelRecent",
+    [KEY_PROJECT_ROOTS]: "projectRoots",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
   // arrive via the Tauri event emitted by writePref().
