@@ -15,8 +15,12 @@ import {
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SourceControlSummary } from "./useSourceControl";
+import {
+  deriveSourceControlPanelState,
+  type SourceControlPanelState as PanelStateValue,
+} from "./panelState";
 
-type PanelState = "closed" | "loading" | "no-repo" | "ready" | "error";
+type PanelState = PanelStateValue;
 type DiffMode = "+" | "-";
 type SelectionTransition = "none" | "moved-group" | "reset";
 
@@ -355,6 +359,7 @@ function optimisticDiscard(
 
 export function useSourceControlPanel(
   isOpen: boolean,
+  workspace: { hasFolder: boolean; isRestoring: boolean },
   summary: SourceControlSummary,
   onOpenDiff:
     | ((input: {
@@ -565,16 +570,34 @@ export function useSourceControlPanel(
   }, [isOpen, summary]);
 
   useEffect(() => {
-    if (!isOpen) {
+    const next = deriveSourceControlPanelState({
+      isOpen,
+      isRestoring: workspace.isRestoring,
+      hasFolder: workspace.hasFolder,
+      isLoading: summary.isLoading,
+      hasRepo: summary.hasRepo,
+      hasStatus: !!summary.status,
+      hasError: !!summary.localError,
+    });
+
+    if (next === "closed") {
       setPanelState("closed");
       setSelectionTransition("none");
       return;
     }
-    if (summary.isLoading && !summary.hasRepo && !summary.status) {
+    if (next === "loading") {
       setPanelState("loading");
       return;
     }
-    if (!summary.hasRepo) {
+    if (next === "no-folder") {
+      setRepo(null);
+      setStatus(null);
+      setSelected(null);
+      setPanelState("no-folder");
+      setSelectionTransition("none");
+      return;
+    }
+    if (next === "no-repo") {
       setRepo(null);
       setStatus(null);
       setSelected(null);
@@ -582,7 +605,7 @@ export function useSourceControlPanel(
       setSelectionTransition("none");
       return;
     }
-    if (summary.localError && !summary.status) {
+    if (next === "error") {
       setRepo(summary.repo);
       setStatus(null);
       setSelected(null);
@@ -591,9 +614,6 @@ export function useSourceControlPanel(
       return;
     }
     if (!summary.repo || !summary.status) {
-      if (summary.isLoading) {
-        setPanelState("loading");
-      }
       return;
     }
 
@@ -631,6 +651,8 @@ export function useSourceControlPanel(
     }
   }, [
     isOpen,
+    workspace.hasFolder,
+    workspace.isRestoring,
     summary.hasRepo,
     summary.isLoading,
     summary.localError,

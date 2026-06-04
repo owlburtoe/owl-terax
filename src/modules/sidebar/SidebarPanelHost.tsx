@@ -39,7 +39,9 @@ type ViewProps = {
 type ExplorerProps = {
   explorerRef: RefObject<FileExplorerHandle | null>;
   explorerRoot: string | null;
+  isRestoring: boolean;
   onOpenFile: (path: string, pin?: boolean) => void;
+  onOpenFolder: () => void;
   onPathRenamed: (from: string, to: string) => void;
   onPathDeleted: (path: string) => void;
   onRevealInTerminal: (path: string) => void;
@@ -48,6 +50,7 @@ type ExplorerProps = {
 };
 
 type SourceControlProps = {
+  hasFolder: boolean;
   sourceControl: SourceControlSummary;
   onOpenDiff: (params: {
     path: string;
@@ -56,6 +59,7 @@ type SourceControlProps = {
     originalPath: string | null;
     title?: string;
   }) => void;
+  onOpenFolder: () => void;
   onOpenGitGraph: () => void;
 };
 
@@ -90,7 +94,10 @@ export function SidebarPanelHost({
   sidebarWidthRef,
   explorerRef,
   explorerRoot,
+  isRestoring,
+  hasFolder,
   onOpenFile,
+  onOpenFolder,
   onPathRenamed,
   onPathDeleted,
   onRevealInTerminal,
@@ -194,7 +201,10 @@ export function SidebarPanelHost({
             {renderPanel(m.id, {
               explorerRef,
               explorerRoot,
+              isRestoring,
+              hasFolder,
               onOpenFile,
+              onOpenFolder,
               onPathRenamed,
               onPathDeleted,
               onRevealInTerminal,
@@ -230,6 +240,8 @@ function renderPanel(id: SidebarViewId, ctx: PanelContext): React.ReactNode {
         <FileExplorer
           ref={ctx.explorerRef}
           rootPath={ctx.explorerRoot}
+          isRestoring={ctx.isRestoring}
+          onOpenFolder={ctx.onOpenFolder}
           onOpenFile={ctx.onOpenFile}
           onPathRenamed={ctx.onPathRenamed}
           onPathDeleted={ctx.onPathDeleted}
@@ -242,7 +254,10 @@ function renderPanel(id: SidebarViewId, ctx: PanelContext): React.ReactNode {
       return (
         <SourceControlPanel
           open
+          hasFolder={ctx.hasFolder}
+          isRestoring={ctx.isRestoring}
           sourceControl={ctx.sourceControl}
+          onOpenFolder={ctx.onOpenFolder}
           onOpenDiff={ctx.onOpenDiff}
           onOpenGitGraph={ctx.onOpenGitGraph}
         />
