@@ -40,6 +40,8 @@ export type FileExplorerHandle = {
 
 type Props = {
   rootPath: string | null;
+  isRestoring?: boolean;
+  onOpenFolder?: () => void;
   onOpenFile: (path: string, pin?: boolean) => void;
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
@@ -147,6 +149,8 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
   function FileExplorer(
     {
       rootPath,
+      isRestoring,
+      onOpenFolder,
       onOpenFile,
       onPathRenamed,
       onPathDeleted,
@@ -232,16 +236,27 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
 
     if (!rootPath) {
       return (
-        <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+        <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
           <HugeiconsIcon
             icon={Folder01Icon}
             size={24}
             strokeWidth={1.5}
             className="text-muted-foreground"
           />
-          <div className="text-xs text-muted-foreground">
-            No current directory
-          </div>
+          {isRestoring ? (
+            <div className="text-xs text-muted-foreground">Restoring…</div>
+          ) : (
+            <>
+              <div className="text-xs text-muted-foreground">
+                No folder opened
+              </div>
+              {onOpenFolder ? (
+                <Button size="sm" variant="secondary" onClick={() => onOpenFolder()}>
+                  Open Folder
+                </Button>
+              ) : null}
+            </>
+          )}
         </div>
       );
     }
@@ -383,6 +398,17 @@ export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
             />
             {basename(rootPath)}
           </span>
+
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-6 text-muted-foreground hover:text-foreground"
+            onClick={() => onOpenFolder?.()}
+            title="Open folder"
+            aria-label="Open folder"
+          >
+            <HugeiconsIcon icon={Folder01Icon} size={13} strokeWidth={2} />
+          </Button>
 
           <Button
             variant="ghost"
