@@ -84,6 +84,7 @@ import { MAX_PANES_PER_TAB, useTabs, useWorkspaceCwd } from "@/modules/tabs";
 import {
   disposeSession,
   findLeafCwd,
+  focusTerminalTabAfterOpen,
   hasLeaf,
   leafIds,
   respawnSession,
@@ -196,6 +197,8 @@ export default function App() {
   // (e.g. cdInNewTab) read the latest pane state instead of a stale closure.
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
 
   const activeTerminalTab = useMemo(() => {
     const t = tabs.find((x) => x.id === activeId);
@@ -208,6 +211,19 @@ export default function App() {
     useState<SearchAddon | null>(null);
   const searchInlineRef = useRef<SearchInlineHandle | null>(null);
   const terminalRefs = useRef<Map<number, TerminalPaneHandle>>(new Map());
+  const pendingTerminalFocusCancelRef = useRef<(() => void) | null>(null);
+  const focusNewTerminalTab = useCallback((tabId: number) => {
+    pendingTerminalFocusCancelRef.current?.();
+    pendingTerminalFocusCancelRef.current = focusTerminalTabAfterOpen({
+      tabId,
+      tabsRef,
+      activeIdRef,
+      terminalRefs,
+    });
+  }, []);
+  useEffect(() => {
+    return () => pendingTerminalFocusCancelRef.current?.();
+  }, []);
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
   const [activeEditorHandle, setActiveEditorHandle] =
@@ -805,12 +821,14 @@ export default function App() {
   }, [askFromSelection]);
 
   const openNewTab = useCallback(() => {
-    newTab(inheritedCwdForNewTab());
-  }, [newTab, inheritedCwdForNewTab]);
+    const tabId = newTab(inheritedCwdForNewTab());
+    focusNewTerminalTab(tabId);
+  }, [newTab, inheritedCwdForNewTab, focusNewTerminalTab]);
 
   const openNewPrivateTab = useCallback(() => {
-    newPrivateTab(inheritedCwdForNewTab());
-  }, [newPrivateTab, inheritedCwdForNewTab]);
+    const tabId = newPrivateTab(inheritedCwdForNewTab());
+    focusNewTerminalTab(tabId);
+  }, [newPrivateTab, inheritedCwdForNewTab, focusNewTerminalTab]);
 
   const sendCd = useCallback(
     (path: string) => {
@@ -826,6 +844,7 @@ export default function App() {
   const cdInNewTab = useCallback(
     (path: string) => {
       const tabId = newTab(path);
+      focusNewTerminalTab(tabId);
       setTimeout(() => {
         const tab = tabsRef.current.find((x) => x.id === tabId);
         if (!tab || tab.kind !== "terminal") return;
@@ -835,7 +854,7 @@ export default function App() {
         t.focus();
       }, 80);
     },
-    [newTab],
+    [newTab, focusNewTerminalTab],
   );
 
   const handleOpenFile = useCallback(
