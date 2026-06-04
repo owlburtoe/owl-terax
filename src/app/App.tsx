@@ -110,6 +110,7 @@ import {
   useWorkspaceEnvStore,
   type WorkspaceEnv,
 } from "@/modules/workspace";
+import { useProjectRoots } from "@/modules/workspace/useProjectRoots";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir } from "@tauri-apps/api/path";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -117,14 +118,6 @@ import type { SearchAddon } from "@xterm/addon-search";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-
-function dirname(path: string | null): string | null {
-  if (!path) return null;
-  const normalized = path.replace(/\\/g, "/");
-  const idx = normalized.lastIndexOf("/");
-  if (idx <= 0) return normalized;
-  return normalized.slice(0, idx);
-}
 
 const SIDEBAR_DEFAULT_WIDTH = 260;
 const SIDEBAR_MIN_WIDTH = 220;
@@ -302,7 +295,6 @@ export default function App() {
   const workspaceEnv = useWorkspaceEnvStore((s) => s.env);
   const setWorkspaceEnv = useWorkspaceEnvStore((s) => s.setEnv);
   const [launchCwd, setLaunchCwd] = useState<string | null>(null);
-  const [launchCwdResolved, setLaunchCwdResolved] = useState(false);
   const [pendingDeleteTabs, setPendingDeleteTabs] = useState<number[] | null>(
     null,
   );
@@ -372,8 +364,7 @@ export default function App() {
     native
       .workspaceCurrentDir()
       .then(setLaunchCwd)
-      .catch(() => setLaunchCwd(null))
-      .finally(() => setLaunchCwdResolved(true));
+      .catch(() => setLaunchCwd(null));
   }, []);
 
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -596,12 +587,18 @@ export default function App() {
     };
   }, [openFileTab]);
 
-  const { explorerRoot, inheritedCwdForNewTab } = useWorkspaceCwd(
+  const { inheritedCwdForNewTab } = useWorkspaceCwd(
     activeTab,
     tabs,
     launchCwd ?? home,
     defaultTerminalCwd || null,
   );
+  const {
+    primaryRoot,
+    isRestoring: isRestoringWorkspace,
+    openFolder,
+  } = useProjectRoots();
+  const explorerRoot = primaryRoot; // pinned project root; null = no folder open
 
   useEffect(() => {
     setActiveSearchAddon(
@@ -909,19 +906,15 @@ export default function App() {
     }
     return null;
   })();
-  const workspaceFallbackPath = launchCwdResolved
-    ? (launchCwd ?? home ?? null)
-    : null;
-  const sourceControlContextPath = (() => {
-    if (activeTab?.kind === "terminal") {
-      return activeTerminalLeafCwd ?? explorerRoot ?? workspaceFallbackPath;
-    }
-    if (activeTab?.kind === "editor") return dirname(activeTab.path);
-    if (activeTab?.kind === "git-diff") return activeTab.repoRoot;
-    if (activeTab?.kind === "git-commit-file") return activeTab.repoRoot;
-    if (activeTab?.kind === "git-history") return activeTab.repoRoot;
-    return explorerRoot ?? workspaceFallbackPath;
-  })();
+  const gitTabRoot =
+    activeTab?.kind === "git-diff" ||
+    activeTab?.kind === "git-commit-file" ||
+    activeTab?.kind === "git-history"
+      ? activeTab.repoRoot
+      : null;
+  // Pinned: Source Control reflects the open project root (or an explicit git
+  // tab's repo). Terminal cwd / editor path / home never leak in.
+  const sourceControlContextPath = primaryRoot ?? gitTabRoot ?? null;
   const hasOpenGitTab = useMemo(
     () =>
       tabs.some(
@@ -937,7 +930,7 @@ export default function App() {
   // Stable per-session path so switching tabs / cd-ing in a shell does NOT
   // re-fire git IPC for the badge. The active panel resolves the current
   // context path on its own when the user actually opens git.
-  const badgeContextPath = workspaceFallbackPath;
+  const badgeContextPath = primaryRoot;
   const sourceControlPath = sourceControlActive
     ? sourceControlContextPath
     : badgeContextPath;
@@ -1440,6 +1433,9 @@ export default function App() {
                     sidebarWidthRef={sidebarWidthRef}
                     explorerRef={explorerRef}
                     explorerRoot={explorerRoot}
+                    isRestoring={isRestoringWorkspace}
+                    hasFolder={primaryRoot !== null}
+                    onOpenFolder={() => void openFolder()}
                     onOpenFile={handleOpenFile}
                     onPathRenamed={handlePathRenamed}
                     onPathDeleted={handlePathDeleted}
