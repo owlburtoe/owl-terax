@@ -22,6 +22,9 @@ pub enum GitError {
     HostKeyUnverified,
     TimedOut(&'static str),
     EmptyCommitMessage,
+    NotFastForward,
+    RebaseConflict,
+    ForcePushRejected,
     CommandFailed {
         context: &'static str,
         detail: String,
@@ -79,6 +82,18 @@ impl Display for GitError {
             ),
             GitError::TimedOut(op) => write!(f, "{op} timed out"),
             GitError::EmptyCommitMessage => write!(f, "commit message cannot be empty"),
+            GitError::NotFastForward => write!(
+                f,
+                "remote has diverged; cannot fast-forward. Use Pull (Rebase) to integrate."
+            ),
+            GitError::RebaseConflict => write!(
+                f,
+                "rebase hit conflicts. Resolve them in the terminal, then continue or abort."
+            ),
+            GitError::ForcePushRejected => write!(
+                f,
+                "remote moved since your last fetch. Fetch and review before force pushing."
+            ),
             GitError::CommandFailed { context, detail } => {
                 if detail.is_empty() {
                     write!(f, "{context}")
@@ -107,3 +122,19 @@ impl From<GitError> for String {
 }
 
 pub type Result<T> = std::result::Result<T, GitError>;
+
+#[cfg(test)]
+mod tests {
+    use super::GitError;
+
+    #[test]
+    fn diverged_errors_have_actionable_messages() {
+        assert!(GitError::NotFastForward
+            .to_string()
+            .contains("Pull (Rebase)"));
+        assert!(GitError::RebaseConflict.to_string().contains("conflicts"));
+        assert!(GitError::ForcePushRejected
+            .to_string()
+            .contains("force pushing"));
+    }
+}
