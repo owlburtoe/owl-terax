@@ -95,6 +95,9 @@ The themes below frame every scope decision.
 
 ### Coming next
 
+- [ ] Source control action menus (commit split-button with sticky default, sync/push/pull/amend/force-push suite, fetch-prune - in open PR #6)
+- [ ] SCM branch management panel (branch list, create, switch, delete - sub-project B of action-menus plan)
+- [ ] SCM stash panel (stash push/pop/drop - sub-project C of action-menus plan)
 - [ ] SSH support (PTY auth and known_hosts first; SFTP and port forwarding later)
 - [ ] Inline terminal auto-suggestions (history-based first; AI-powered opt-in later)
 - [ ] Themes and customizations (terminal themes, UI accents, keybindings, layout)
