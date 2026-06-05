@@ -321,7 +321,7 @@ export function useSourceControl(
 
         if (shouldAutoFetch) {
           try {
-            await native.gitFetch(repo.repoRoot);
+            await native.gitFetchPrune(repo.repoRoot);
             touchAutoFetch(autoFetchByRepoRef.current, repo.repoRoot);
             nextRemoteError = null;
             if (requestId !== requestIdRef.current) return;

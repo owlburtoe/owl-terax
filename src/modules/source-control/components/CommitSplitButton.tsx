@@ -4,11 +4,13 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Fragment } from "react";
-import { COMMIT_ACTIONS, type CommitAction } from "../types/actions";
+import {
+  COMMIT_ACTIONS,
+  STICKY_COMMIT_ACTIONS,
+  type CommitAction,
+} from "../types/actions";
 import { useCommitDefaultPreference } from "../hooks/useCommitDefaultPreference";
 import { SplitButton } from "./SplitButton";
-
-const STICKY = new Set<CommitAction>(["commit", "commit-push", "commit-sync"]);
 
 interface CommitSplitButtonProps {
   canCommit: boolean;
@@ -36,7 +38,7 @@ export function CommitSplitButton({ canCommit, busy, onRun }: CommitSplitButtonP
       menu={COMMIT_ACTIONS.map((a) => (
         <Fragment key={a.id}>
           {a.separatorBefore ? <DropdownMenuSeparator /> : null}
-          {STICKY.has(a.id) ? (
+          {STICKY_COMMIT_ACTIONS.has(a.id) ? (
             <DropdownMenuCheckboxItem
               checked={a.id === defaultAction}
               onSelect={() => run(a.id)}

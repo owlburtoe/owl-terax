@@ -9,7 +9,10 @@ import {
   type AutocompleteProviderId,
   type ModelId,
 } from "@/modules/ai/config";
-import type { CommitAction } from "@/modules/source-control/types/actions";
+import {
+  COMMIT_ACTIONS,
+  type CommitAction,
+} from "@/modules/source-control/types/actions";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
@@ -150,13 +153,9 @@ const KEY_SIDEBAR_SCM_GRAPH_COLLAPSED = "sidebarScmGraphCollapsed";
 const KEY_SCM_COMMIT_DEFAULT_ACTION = "scmCommitDefaultAction";
 const KEY_PROJECT_ROOTS = "projectRoots";
 
-const VALID_COMMIT_ACTIONS: ReadonlySet<CommitAction> = new Set([
-  "commit",
-  "commit-push",
-  "commit-sync",
-  "amend",
-  "commit-all",
-]);
+const VALID_COMMIT_ACTIONS: ReadonlySet<CommitAction> = new Set(
+  COMMIT_ACTIONS.map((a) => a.id),
+);
 
 function isCommitAction(value: unknown): value is CommitAction {
   return (

@@ -29,6 +29,14 @@ export const COMMIT_ACTION_LABELS: Record<CommitAction, string> =
 export const DEFAULT_COMMIT_ACTION: CommitAction = "commit";
 
 /**
+ * Actions that may persist as the sticky default. One-off actions (amend,
+ * commit-all) are excluded: running them resets the default to plain commit.
+ */
+export const STICKY_COMMIT_ACTIONS: ReadonlySet<CommitAction> = new Set<CommitAction>(
+  ["commit", "commit-push", "commit-sync"],
+);
+
+/**
  * HEAD is treated as published when an upstream is configured and the local
  * branch is not ahead of it per the last known tracking ref. When ahead is
  * unknown we fail safe (treat as published) so amend always confirms.
