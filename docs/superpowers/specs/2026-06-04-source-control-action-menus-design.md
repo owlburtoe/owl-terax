@@ -54,13 +54,27 @@ Not built in this spec:
   - `Commit & Sync`
   - (separator)
   - `Amend Last Commit`
-  - `Commit All` — stage all tracked changes, then commit
+  - `Commit All` — stage all tracked changes (`git add -u`), then commit
 - Choosing a menu item runs it and sets it as the new sticky default. A check
   marks the current default.
 - The sticky default persists across sessions in the preferences store.
 - Disabled state and tooltip hints reuse the existing `canCommit`,
   `commitHint`, and `commitDisabledReason` logic. `Commit All` is enabled when
   there are unstaged tracked changes even if nothing is staged yet.
+
+#### Commit All semantics
+
+`Commit All` stages all modified and deleted tracked files using `git add -u`,
+then commits. It does **not** stage untracked files (no `git add .`). This
+matches the label and VSCode's "Commit All" behavior.
+
+#### Amend semantics
+
+`Amend Last Commit` uses the current commit message input as the replacement
+message and runs `git commit --amend -m <message>`. If the input is empty, it
+fails through the same validation path as a normal commit (no silent
+`--no-edit`). Amending without editing the message is out of scope for this
+spec.
 
 ### 2. Sync split-button (right)
 
@@ -72,7 +86,10 @@ Not built in this spec:
   - (separator)
   - `Force Push (lease)`
 - Sync is *not* sticky; the main action is always Sync. The caret is for the
-  one-off variants.
+  one-off variants. Choosing Push or Pull from the caret runs that action but
+  does not change the main button.
+- `Force Push (lease)` is disabled unless the current branch has a configured
+  upstream. Publishing a new branch is out of scope (Branches spec).
 
 ### 3. Header: Fetch split + Refresh
 
@@ -94,20 +111,27 @@ growing further and matches the project's many-small-files architecture rule.
 
 ## Behavior and safety
 
-- **Amend**: shows a confirm dialog *only* when HEAD is already published
-  (upstream is set and `ahead === 0`, meaning the tip commit exists on the
-  remote). Otherwise it runs directly. Reuses the existing `AlertDialog`
-  used for discard.
+- **Amend**: shows a confirm dialog when HEAD appears to be published according
+  to the configured upstream tracking ref. A helper `isHeadLikelyPublished`
+  treats HEAD as published when an upstream is configured and the local branch
+  is not ahead of its upstream per the last known tracking ref. If branch or
+  upstream state cannot be determined safely, the confirm dialog is shown
+  (fail safe — never silently amend possibly-published history). Otherwise
+  amend runs directly. Reuses the existing `AlertDialog` used for discard.
 - **Force Push**: always uses `--force-with-lease` and always shows a confirm
   dialog. The lease means a stale remote rejects the push instead of clobbering
-  someone else's work.
+  someone else's work. Disabled when no upstream is configured (see Sync menu).
 - **Divergence**: Sync and Pull stay fast-forward-only. On a non-fast-forward
   they fail cleanly with a message pointing the user to `Pull (Rebase)`. No
   implicit merge commits are ever created.
+- **Sync pipeline** = Fetch → Pull (ff-only) → Push. Failure reporting
+  identifies the phase that failed (`Fetch failed`, `Pull failed`, or
+  `Push failed`) so a user whose fetch+pull succeeded but push failed sees
+  exactly that, not a vague "sync failed".
 - **Composite actions** (Commit & Push, Commit & Sync): the commit runs first.
   If the commit succeeds but the remote step fails, the commit is kept and the
   remote error is surfaced in the feedback banner. The outcome is reported
-  faithfully (committed, then push/sync failed) rather than presented as a
+  faithfully (committed, then the failing phase) rather than presented as a
   single all-or-nothing result.
 
 ## Backend
@@ -118,15 +142,36 @@ following the exact existing pattern (`WorkspaceEnv::from_option`, `blocking`,
 remote operations):
 
 - `git_commit_amend(repo_root, message)` — `git commit --amend -m <message>`.
+  Empty message fails through the same validation as `git_commit`.
 - `git_push_force_with_lease(repo_root)` — `git push --force-with-lease`.
-- `git_pull_rebase(repo_root)` — `git pull --rebase`; surfaces conflict/abort
-  state as a typed error.
-- `git_fetch_prune(repo_root)` — `git fetch --prune`.
+  Returns a clear error when no upstream is configured (frontend also disables
+  it; backend still guards).
+- `git_pull_rebase(repo_root)` — `git pull --rebase`, run non-interactively (no
+  editor prompt, no interactive credential hang; bounded by
+  `NETWORK_TIMEOUT_SECS`). Typed cases:
+
+  | Case | Mapped error |
+  | --- | --- |
+  | rebase hits conflicts | `RebaseConflict` |
+  | unstaged local changes block rebase | `WorkingTreeDirty` or existing normalized git error |
+  | remote diverged but rebase succeeds | success |
+  | auth / network timeout | existing network error path |
+
+  Do not introduce a new error variant if the existing taxonomy already covers
+  the case.
+- `git_fetch_prune(repo_root)` — `git fetch --prune`, via the same
+  authorization path as `git_fetch`.
 
 Composed client-side (no new backend):
 
-- **Sync** = `gitFetch` then `gitPullFfOnly` then `gitPush`.
-- **Commit All** = `gitStage(all tracked)` then `gitCommit`.
+- **Sync** = `gitFetch` then `gitPullFfOnly` then `gitPush`, with phase-aware
+  error reporting (see Sync pipeline above).
+- **Commit All** = `gitStage` of tracked changes (`git add -u`) then `gitCommit`.
+
+Internal helper (only if warranted): if `fetch`/`pull`/`push` end up repeating
+network/timeout setup, factor a private `run_git_remote_command_with_timeout`
+helper. Do **not** refactor the existing remote operations during this
+sub-project unless that duplication actually appears.
 
 ## Frontend wiring
 
@@ -138,6 +183,34 @@ Composed client-side (no new backend):
   `commitAndSync`, the sticky-default state, and the published-HEAD check that
   drives the amend confirm gate.
 
+### File layout
+
+`SourceControlPanel.tsx` stays composition-only. It must not become the action
+router; that logic lives in the hooks below.
+
+```
+src/modules/source-control/
+  components/
+    SplitButton.tsx
+    GitActionMenu.tsx
+    CommitSplitButton.tsx
+    SyncSplitButton.tsx
+    FetchSplitButton.tsx
+  hooks/
+    useSourceControlActions.ts        # runs amend / commitAll / composites / remote variants
+    useCommitDefaultPreference.ts     # sticky default persistence
+  types/
+    actions.ts                        # action union + menu item descriptors
+```
+
+In the panel:
+
+```tsx
+<FetchSplitButton ... />
+<CommitSplitButton ... />
+<SyncSplitButton ... />
+```
+
 ## Error handling
 
 Reuses `normalizeError` and the `CommitFeedback` banner. New typed Rust errors
@@ -147,6 +220,9 @@ with actionable messages:
 - `RebaseConflict` — "Rebase hit conflicts. Resolve them in the terminal."
 - `ForcePushRejected` — "Remote moved since your last fetch. Fetch and review
   before force pushing."
+
+Reuse existing normalized errors where they fit (e.g. a dirty working tree
+blocking rebase) rather than minting new variants.
 
 ## Testing
 
@@ -168,6 +244,41 @@ Frontend:
   error shown).
 - Amend confirm gate fires only when HEAD is published; runs directly
   otherwise.
+
+## Acceptance criteria
+
+UI:
+
+- Main Commit button label changes to match the sticky default.
+- Menu item checkmark reflects the persisted default after a reload.
+- Disabled menu items still render with an explanatory tooltip / accessible
+  label.
+- Commit All does not stage untracked files.
+- Sync does not become sticky even after choosing Push or Pull from its caret.
+- Force Push is disabled (and labeled why) when no upstream is configured.
+
+Backend:
+
+- `git_push_force_with_lease` rejects with a clear error when there is no
+  upstream (and the frontend disables the action).
+- `git_pull_rebase` does not leave the UI stuck in a loading state after a
+  conflict — it resolves to a typed error.
+- `git_fetch_prune` uses the same authorization path as `git_fetch`.
+- `git_commit_amend` with an empty message fails like a normal empty commit.
+
+## Implementation order
+
+1. Add Rust commands and tests (`git_commit_amend`, `git_push_force_with_lease`,
+   `git_pull_rebase`, `git_fetch_prune`).
+2. Add `native.ts` wrappers.
+3. Add the action type model (`types/actions.ts`).
+4. Build `SplitButton` + tests.
+5. Add `CommitSplitButton`, `SyncSplitButton`, `FetchSplitButton`.
+6. Wire into `useSourceControlPanel` via `useSourceControlActions`.
+7. Add the sticky default preference (`useCommitDefaultPreference`).
+8. Add the confirm gates (amend-when-published, force push).
+9. Add composite + phase-aware feedback tests.
+10. Run full verification.
 
 ## Verification
 
