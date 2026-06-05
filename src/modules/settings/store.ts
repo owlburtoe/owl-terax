@@ -9,6 +9,7 @@ import {
   type AutocompleteProviderId,
   type ModelId,
 } from "@/modules/ai/config";
+import type { CommitAction } from "@/modules/source-control/types/actions";
 import type { KeyBinding, ShortcutId } from "@/modules/shortcuts/shortcuts";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { LazyStore } from "@tauri-apps/plugin-store";
@@ -94,6 +95,7 @@ export type Preferences = {
   sidebarPanelRecent: boolean;
   sidebarScmGraphSize: number;
   sidebarScmGraphCollapsed: boolean;
+  scmCommitDefaultAction: CommitAction;
   projectRoots: string[];
 };
 
@@ -145,7 +147,23 @@ const KEY_SIDEBAR_PANEL_OUTLINE = "sidebarPanelOutline";
 const KEY_SIDEBAR_PANEL_RECENT = "sidebarPanelRecent";
 const KEY_SIDEBAR_SCM_GRAPH_SIZE = "sidebarScmGraphSize";
 const KEY_SIDEBAR_SCM_GRAPH_COLLAPSED = "sidebarScmGraphCollapsed";
+const KEY_SCM_COMMIT_DEFAULT_ACTION = "scmCommitDefaultAction";
 const KEY_PROJECT_ROOTS = "projectRoots";
+
+const VALID_COMMIT_ACTIONS: ReadonlySet<CommitAction> = new Set([
+  "commit",
+  "commit-push",
+  "commit-sync",
+  "amend",
+  "commit-all",
+]);
+
+function isCommitAction(value: unknown): value is CommitAction {
+  return (
+    typeof value === "string" &&
+    VALID_COMMIT_ACTIONS.has(value as CommitAction)
+  );
+}
 
 export const SCM_GRAPH_SIZE_DEFAULT = 35;
 export const SCM_GRAPH_SIZE_MIN = 15;
@@ -213,6 +231,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
   sidebarPanelRecent: false,
   sidebarScmGraphSize: SCM_GRAPH_SIZE_DEFAULT,
   sidebarScmGraphCollapsed: false,
+  scmCommitDefaultAction: "commit",
   projectRoots: [],
 };
 
@@ -358,6 +377,12 @@ export async function loadPreferences(): Promise<Preferences> {
     sidebarScmGraphCollapsed:
       get<boolean>(KEY_SIDEBAR_SCM_GRAPH_COLLAPSED) ??
       DEFAULT_PREFERENCES.sidebarScmGraphCollapsed,
+    scmCommitDefaultAction: ((): CommitAction => {
+      const stored = get<unknown>(KEY_SCM_COMMIT_DEFAULT_ACTION);
+      return isCommitAction(stored)
+        ? stored
+        : DEFAULT_PREFERENCES.scmCommitDefaultAction;
+    })(),
     projectRoots:
       get<string[]>(KEY_PROJECT_ROOTS) ?? DEFAULT_PREFERENCES.projectRoots,
   };
@@ -592,6 +617,12 @@ export async function setSidebarScmGraphCollapsed(
   await writePref(KEY_SIDEBAR_SCM_GRAPH_COLLAPSED, value);
 }
 
+export async function setScmCommitDefaultAction(
+  value: CommitAction,
+): Promise<void> {
+  await writePref(KEY_SCM_COMMIT_DEFAULT_ACTION, value);
+}
+
 export async function setProjectRoots(value: string[]): Promise<void> {
   await writePref(KEY_PROJECT_ROOTS, value);
 }
@@ -649,6 +680,7 @@ export async function onPreferencesChange(
     [KEY_SIDEBAR_PANEL_RECENT]: "sidebarPanelRecent",
     [KEY_SIDEBAR_SCM_GRAPH_SIZE]: "sidebarScmGraphSize",
     [KEY_SIDEBAR_SCM_GRAPH_COLLAPSED]: "sidebarScmGraphCollapsed",
+    [KEY_SCM_COMMIT_DEFAULT_ACTION]: "scmCommitDefaultAction",
     [KEY_PROJECT_ROOTS]: "projectRoots",
   };
   // Same-process writes still fire onChange immediately; cross-window writes
