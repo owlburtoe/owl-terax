@@ -17,6 +17,44 @@ use crate::modules::git::utils::{
 };
 use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
 
+fn classify_ff_pull_failure(stderr: &str) -> GitError {
+    let s = stderr.to_ascii_lowercase();
+    if s.contains("not possible to fast-forward") || s.contains("non-fast-forward") {
+        GitError::NotFastForward
+    } else {
+        GitError::command("git pull --ff-only failed", stderr.trim().to_string())
+    }
+}
+
+fn classify_pull_rebase_failure(stderr: &str) -> GitError {
+    let s = stderr.to_ascii_lowercase();
+    if s.contains("could not apply") || s.contains("conflict") || s.contains("needs merge") {
+        GitError::RebaseConflict
+    } else if s.contains("cannot pull with rebase")
+        || s.contains("unstaged changes")
+        || s.contains("uncommitted changes")
+    {
+        GitError::command(
+            "git pull --rebase",
+            "you have local changes; commit or stash them first",
+        )
+    } else {
+        GitError::command("git pull --rebase failed", stderr.trim().to_string())
+    }
+}
+
+fn classify_force_push_failure(stderr: &str) -> GitError {
+    let s = stderr.to_ascii_lowercase();
+    if s.contains("stale info") || (s.contains("[rejected]") && s.contains("->")) {
+        GitError::ForcePushRejected
+    } else {
+        GitError::command(
+            "git push --force-with-lease failed",
+            stderr.trim().to_string(),
+        )
+    }
+}
+
 pub fn resolve_repo(
     registry: &WorkspaceRegistry,
     cwd: &str,
@@ -424,6 +462,48 @@ pub fn commit(
     })
 }
 
+pub fn commit_amend(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    message: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<GitCommitResult> {
+    let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
+    ensure_git_available(&repo_root.workspace)?;
+    let trimmed = message.trim();
+    if trimmed.is_empty() {
+        return Err(GitError::EmptyCommitMessage);
+    }
+
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        [
+            OsStr::new("commit"),
+            OsStr::new("--amend"),
+            OsStr::new("-m"),
+            OsStr::new(trimmed),
+        ],
+        DEFAULT_TIMEOUT_SECS,
+    )?;
+    ensure_success(&output, "git commit --amend failed")?;
+
+    let combined = git_stdout_lines(
+        &repo_root.workspace,
+        &repo_root.git_path,
+        ["show", "-s", "--format=%H%n%s", "HEAD"],
+    )?;
+    let sha = combined.first().cloned().ok_or(GitError::CommandFailed {
+        context: "failed to resolve amended commit sha",
+        detail: String::new(),
+    })?;
+    let summary = combined.get(1).cloned().unwrap_or_default();
+    Ok(GitCommitResult {
+        commit_sha: sha,
+        summary,
+    })
+}
+
 pub fn push(
     registry: &WorkspaceRegistry,
     repo_root: &str,
@@ -448,6 +528,46 @@ pub fn push(
         NETWORK_TIMEOUT_SECS,
     )?;
     ensure_success(&output, "git push failed")?;
+
+    let upstream = upstream.unwrap();
+    let (remote, branch) = split_upstream(&upstream);
+    Ok(GitPushResult {
+        remote,
+        branch,
+        pushed: true,
+    })
+}
+
+pub fn push_force_with_lease(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<GitPushResult> {
+    let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
+    ensure_git_available(&repo_root.workspace)?;
+
+    let upstream = git_stdout_line_opt(
+        &repo_root.workspace,
+        &repo_root.git_path,
+        ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+    )?;
+    if upstream.is_none() {
+        return Err(GitError::NoUpstream);
+    }
+
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        ["push", "--force-with-lease"],
+        NETWORK_TIMEOUT_SECS,
+    )?;
+    if output.timed_out {
+        return Err(GitError::TimedOut("git push --force-with-lease"));
+    }
+    if output.exit_code != Some(0) {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(classify_force_push_failure(&stderr));
+    }
 
     let upstream = upstream.unwrap();
     let (remote, branch) = split_upstream(&upstream);
@@ -918,10 +1038,26 @@ pub fn fetch(
     let output = run_git(
         &repo_root.workspace,
         Some(&repo_root.git_path),
-        ["fetch", "--prune"],
+        ["fetch"],
         NETWORK_TIMEOUT_SECS,
     )?;
     ensure_success(&output, "git fetch failed")
+}
+
+pub fn fetch_prune(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<()> {
+    let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
+    ensure_git_available(&repo_root.workspace)?;
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        ["fetch", "--prune"],
+        NETWORK_TIMEOUT_SECS,
+    )?;
+    ensure_success(&output, "git fetch --prune failed")
 }
 
 pub fn pull_ff_only(
@@ -937,7 +1073,37 @@ pub fn pull_ff_only(
         ["pull", "--ff-only"],
         NETWORK_TIMEOUT_SECS,
     )?;
-    ensure_success(&output, "git pull --ff-only failed")
+    if output.timed_out {
+        return Err(GitError::TimedOut("git pull --ff-only"));
+    }
+    if output.exit_code != Some(0) {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(classify_ff_pull_failure(&stderr));
+    }
+    Ok(())
+}
+
+pub fn pull_rebase(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<()> {
+    let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
+    ensure_git_available(&repo_root.workspace)?;
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        ["pull", "--rebase"],
+        NETWORK_TIMEOUT_SECS,
+    )?;
+    if output.timed_out {
+        return Err(GitError::TimedOut("git pull --rebase"));
+    }
+    if output.exit_code != Some(0) {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(classify_pull_rebase_failure(&stderr));
+    }
+    Ok(())
 }
 
 fn nothing_to_commit(output: &GitOutput) -> bool {
@@ -964,4 +1130,157 @@ fn pathspec(repo_root: &Path, absolute: &Path) -> String {
         .strip_prefix(repo_root)
         .map(|rel| rel.to_string_lossy().replace('\\', "/"))
         .unwrap_or_else(|_| absolute.to_string_lossy().replace('\\', "/"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        classify_ff_pull_failure, classify_force_push_failure, classify_pull_rebase_failure,
+        commit_amend, push_force_with_lease, stage,
+    };
+    use crate::modules::git::errors::GitError;
+    use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
+    use std::process::Command;
+
+    fn git(dir: &std::path::Path, args: &[&str]) {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .expect("git runs");
+        assert!(status.success(), "git {args:?} failed");
+    }
+
+    /// Create an authorized temp repo with one initial commit.
+    fn repo_with_initial_commit() -> (WorkspaceRegistry, String, WorkspaceEnv, tempfile::TempDir) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path();
+        git(path, &["init", "-q", "-b", "main"]);
+        git(path, &["config", "user.email", "test@terax.dev"]);
+        git(path, &["config", "user.name", "Terax Test"]);
+        std::fs::write(path.join("a.txt"), "one\n").unwrap();
+        git(path, &["add", "a.txt"]);
+        git(path, &["commit", "-q", "-m", "chore: initial"]);
+        let registry = WorkspaceRegistry::default();
+        let root = registry.authorize(path).unwrap();
+        (
+            registry,
+            root.to_string_lossy().into_owned(),
+            WorkspaceEnv::Local,
+            dir,
+        )
+    }
+
+    fn head_subject(dir: &std::path::Path) -> String {
+        let out = Command::new("git")
+            .args(["show", "-s", "--format=%s", "HEAD"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    #[test]
+    fn amend_rewrites_head_keeps_single_commit() {
+        let (registry, root, env, dir) = repo_with_initial_commit();
+        std::fs::write(dir.path().join("a.txt"), "two\n").unwrap();
+        stage(&registry, &root, &["a.txt".to_string()], &env).unwrap();
+
+        commit_amend(&registry, &root, "chore: amended subject", &env).unwrap();
+
+        assert_eq!(head_subject(dir.path()), "chore: amended subject");
+        let count = Command::new("git")
+            .args(["rev-list", "--count", "HEAD"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&count.stdout).trim(), "1");
+    }
+
+    #[test]
+    fn amend_empty_message_is_rejected() {
+        let (registry, root, env, _dir) = repo_with_initial_commit();
+        let result = commit_amend(&registry, &root, "   ", &env);
+        assert!(matches!(result, Err(GitError::EmptyCommitMessage)));
+    }
+
+    #[test]
+    fn ff_pull_non_fast_forward_maps_to_not_fast_forward() {
+        let err = classify_ff_pull_failure("fatal: Not possible to fast-forward, aborting.");
+        assert!(matches!(err, GitError::NotFastForward));
+    }
+
+    #[test]
+    fn rebase_conflict_maps_to_rebase_conflict() {
+        let err = classify_pull_rebase_failure(
+            "error: could not apply a1b2c3d... CONFLICT (content): Merge conflict in foo.rs",
+        );
+        assert!(matches!(err, GitError::RebaseConflict));
+    }
+
+    #[test]
+    fn rebase_with_local_changes_is_not_a_conflict() {
+        let err = classify_pull_rebase_failure(
+            "error: cannot pull with rebase: You have unstaged changes.",
+        );
+        assert!(matches!(err, GitError::CommandFailed { .. }));
+    }
+
+    /// Build a bare origin + a clone with upstream tracking. Returns the clone harness.
+    fn clone_with_upstream() -> (
+        WorkspaceRegistry,
+        String,
+        WorkspaceEnv,
+        tempfile::TempDir,
+        tempfile::TempDir,
+    ) {
+        let origin = tempfile::tempdir().unwrap();
+        git(origin.path(), &["init", "-q", "--bare", "-b", "main"]);
+        let work = tempfile::tempdir().unwrap();
+        git(work.path(), &["clone", "-q", origin.path().to_str().unwrap(), "."]);
+        git(work.path(), &["config", "user.email", "test@terax.dev"]);
+        git(work.path(), &["config", "user.name", "Terax Test"]);
+        std::fs::write(work.path().join("a.txt"), "one\n").unwrap();
+        git(work.path(), &["add", "a.txt"]);
+        git(work.path(), &["commit", "-q", "-m", "chore: initial"]);
+        git(work.path(), &["push", "-q", "-u", "origin", "main"]);
+        let registry = WorkspaceRegistry::default();
+        let root = registry.authorize(work.path()).unwrap();
+        (
+            registry,
+            root.to_string_lossy().into_owned(),
+            WorkspaceEnv::Local,
+            origin,
+            work,
+        )
+    }
+
+    #[test]
+    fn force_push_rejected_when_lease_is_stale() {
+        let (registry, root, env, origin, work) = clone_with_upstream();
+        // Another clone advances origin behind our back, so our lease goes stale.
+        let other = tempfile::tempdir().unwrap();
+        git(other.path(), &["clone", "-q", origin.path().to_str().unwrap(), "."]);
+        git(other.path(), &["config", "user.email", "o@terax.dev"]);
+        git(other.path(), &["config", "user.name", "Other"]);
+        std::fs::write(other.path().join("b.txt"), "x\n").unwrap();
+        git(other.path(), &["add", "b.txt"]);
+        git(other.path(), &["commit", "-q", "-m", "chore: other"]);
+        git(other.path(), &["push", "-q", "origin", "main"]);
+
+        // We rewrite our local commit but never fetched the new origin tip.
+        std::fs::write(work.path().join("a.txt"), "two\n").unwrap();
+        git(work.path(), &["commit", "-q", "-am", "chore: local rewrite"]);
+
+        let err = push_force_with_lease(&registry, &root, &env).unwrap_err();
+        assert!(matches!(err, GitError::ForcePushRejected));
+    }
+
+    #[test]
+    fn stale_lease_maps_to_force_push_rejected() {
+        let err = classify_force_push_failure(
+            "! [rejected] main -> main (stale info)\nerror: failed to push some refs",
+        );
+        assert!(matches!(err, GitError::ForcePushRejected));
+    }
 }

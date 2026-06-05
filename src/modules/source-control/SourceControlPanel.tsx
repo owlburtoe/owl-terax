@@ -33,8 +33,6 @@ import {
   ArrowRight01Icon,
   ArrowUp01Icon,
   CheckmarkCircle01Icon,
-  Download01Icon,
-  FolderCloudIcon,
   FolderGitTwoIcon,
   LinkSquare02Icon,
   Refresh01Icon,
@@ -58,6 +56,10 @@ import {
   setSidebarScmGraphSize,
 } from "@/modules/settings/store";
 import { SourceControlGraph } from "./SourceControlGraph";
+import { CommitSplitButton } from "./components/CommitSplitButton";
+import { SyncSplitButton, type SyncMenuAction } from "./components/SyncSplitButton";
+import { FetchSplitButton } from "./components/FetchSplitButton";
+import type { CommitAction } from "./types/actions";
 import type { SourceControlSummary } from "./useSourceControl";
 import {
   useSourceControlPanel,
@@ -213,35 +215,12 @@ export const SourceControlPanel = memo(function SourceControlPanel({
     scm.stagedEntries.length > 0 &&
     scm.commitMessage.trim().length > 0 &&
     !scm.actionBusy;
-  const commitDisabledReason = scm.actionBusy
-    ? "Wait for the current Git action to finish."
-    : scm.stagedEntries.length === 0
-      ? "Stage changes to enable commit."
-      : scm.commitMessage.trim().length === 0
-        ? "Enter a commit message to enable commit."
-        : null;
-  const commitHint = canCommit
-    ? `Commit with ${commitShortcut}.`
-    : (commitDisabledReason ?? `Commit with ${commitShortcut}.`);
-  const pushHint = scm.pushHint ?? "Push is unavailable right now.";
-  const pushDisabledReason = scm.actionBusy
-    ? "Wait for the current Git action to finish."
-    : pushHint;
   const stagedCount = scm.stagedEntries.length;
   const changedCount = scm.fileEntries.length;
   const pushStatusLabel = upstreamBadgeLabel(scm.status?.upstream);
   const hasUpstream = !!scm.status?.upstream;
   const isDiverged =
     !!scm.status && scm.status.ahead > 0 && scm.status.behind > 0;
-
-  const canPull =
-    hasUpstream &&
-    !!scm.status &&
-    scm.status.behind > 0 &&
-    !isDiverged &&
-    !scm.actionBusy &&
-    !sourceControl.busyAction;
-  const canFetch = hasUpstream && !scm.actionBusy && !sourceControl.busyAction;
 
   const footerFeedback = useMemo(() => {
     if (scm.actionError)
@@ -286,13 +265,42 @@ export const SourceControlPanel = memo(function SourceControlPanel({
     });
   }, [scm]);
 
-  const handleFetch = useCallback(() => {
-    void sourceControl.runRemoteAction("fetch");
-  }, [sourceControl]);
+  const [pendingRisky, setPendingRisky] = useState<
+    null | { kind: "amend" } | { kind: "force-push" }
+  >(null);
 
-  const handlePull = useCallback(() => {
-    void sourceControl.runRemoteAction("pull");
-  }, [sourceControl]);
+  const runCommitAction = useCallback(
+    (action: CommitAction) => {
+      if (action === "commit") void scm.commit();
+      else if (action === "commit-push") void scm.commitAndPush();
+      else if (action === "commit-sync") void scm.commitAndSync();
+      else if (action === "amend") void scm.amend();
+      else if (action === "commit-all") void scm.commitAll();
+    },
+    [scm],
+  );
+
+  const handleCommitAction = useCallback(
+    (action: CommitAction) => {
+      if (action === "amend" && scm.headLikelyPublished) {
+        setPendingRisky({ kind: "amend" });
+        return;
+      }
+      runCommitAction(action);
+    },
+    [runCommitAction, scm.headLikelyPublished],
+  );
+
+  const handleSyncAction = useCallback(
+    (action: SyncMenuAction) => {
+      if (action === "force-push") {
+        setPendingRisky({ kind: "force-push" });
+        return;
+      }
+      void sourceControl.runRemoteAction(action);
+    },
+    [sourceControl],
+  );
 
   const rows = useMemo<RowDescriptor[]>(() => {
     const result: RowDescriptor[] = [];
@@ -447,8 +455,6 @@ export const SourceControlPanel = memo(function SourceControlPanel({
 
   if (!open) return null;
 
-  const fetchBusy = sourceControl.busyAction === "fetch";
-  const pullBusy = sourceControl.busyAction === "pull";
   const repoRoot = scm.repo?.repoRoot ?? null;
 
   const changesArea = scm.allClean ? (
@@ -556,48 +562,11 @@ export const SourceControlPanel = memo(function SourceControlPanel({
             ) : null}
           </div>
           <div className="flex shrink-0 items-center gap-0.5">
-            <IconActionButton
-              label={fetchBusy ? "Fetching…" : "Fetch from remote"}
-              disabled={!canFetch}
-              onClick={handleFetch}
-              side="bottom"
-            >
-              {fetchBusy ? (
-                <Spinner className="size-3" />
-              ) : (
-                <HugeiconsIcon
-                  icon={FolderCloudIcon}
-                  size={14}
-                  strokeWidth={1.85}
-                />
-              )}
-            </IconActionButton>
-            <IconActionButton
-              label={
-                pullBusy
-                  ? "Pulling…"
-                  : isDiverged
-                    ? "Branch diverged — resolve in terminal"
-                    : !hasUpstream
-                      ? "No upstream configured"
-                      : (scm.status?.behind ?? 0) === 0
-                        ? "Already up to date"
-                        : `Pull ${scm.status?.behind ?? 0} commits (fast-forward)`
-              }
-              disabled={!canPull}
-              onClick={handlePull}
-              side="bottom"
-            >
-              {pullBusy ? (
-                <Spinner className="size-3" />
-              ) : (
-                <HugeiconsIcon
-                  icon={Download01Icon}
-                  size={14}
-                  strokeWidth={1.9}
-                />
-              )}
-            </IconActionButton>
+            <FetchSplitButton
+              busy={!!scm.actionBusy || sourceControl.busyAction !== null}
+              onFetch={() => void sourceControl.runRemoteAction("fetch")}
+              onFetchPrune={() => void sourceControl.runRemoteAction("fetch-prune")}
+            />
             <IconActionButton
               label="Refresh source control"
               disabled={isRefreshing || !!scm.actionBusy}
@@ -746,49 +715,17 @@ export const SourceControlPanel = memo(function SourceControlPanel({
               </div>
 
               <div className="grid w-full grid-cols-2 gap-1.5">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="xs"
-                      className="h-7 cursor-pointer text-[11.5px] font-semibold tracking-tight shadow-sm disabled:cursor-not-allowed disabled:shadow-none"
-                      disabled={!canCommit}
-                      onClick={() => void scm.commit()}
-                    >
-                      {scm.actionBusy === "commit" ? "Committing…" : "Commit"}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="bottom"
-                    className={cn(
-                      SOURCE_CONTROL_TOOLTIP_CLASS,
-                      "text-[10.5px]",
-                    )}
-                  >
-                    {commitHint}
-                  </TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      size="xs"
-                      variant="secondary"
-                      className="h-7 cursor-pointer text-[11.5px] font-medium disabled:cursor-not-allowed"
-                      disabled={!scm.canPush || !!scm.actionBusy}
-                      onClick={() => void scm.push()}
-                    >
-                      {scm.actionBusy === "push" ? "Pushing…" : "Push"}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent
-                    side="bottom"
-                    className={cn(
-                      SOURCE_CONTROL_TOOLTIP_CLASS,
-                      "max-w-64 text-[10.5px]",
-                    )}
-                  >
-                    {pushDisabledReason}
-                  </TooltipContent>
-                </Tooltip>
+                <CommitSplitButton
+                  canCommit={canCommit}
+                  busy={!!scm.actionBusy}
+                  onRun={handleCommitAction}
+                />
+                <SyncSplitButton
+                  busy={!!scm.actionBusy || sourceControl.busyAction !== null}
+                  hasUpstream={hasUpstream}
+                  onSync={() => void sourceControl.runRemoteAction("sync")}
+                  onAction={handleSyncAction}
+                />
               </div>
 
               <CommitFeedback feedback={footerFeedback} />
@@ -865,6 +802,44 @@ export const SourceControlPanel = memo(function SourceControlPanel({
             </AlertDialogCancel>
             <AlertDialogAction onClick={() => void scm.confirmPendingDiscard()}>
               Discard
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={pendingRisky !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingRisky(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {pendingRisky?.kind === "amend"
+                ? "Amend a published commit?"
+                : "Force push with lease?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingRisky?.kind === "amend"
+                ? "HEAD appears to be on the remote. Amending rewrites published history; you will need to force push afterward."
+                : "This rewrites the remote branch using force-with-lease. It will be rejected if the remote moved since your last fetch."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setPendingRisky(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                const kind = pendingRisky?.kind;
+                setPendingRisky(null);
+                if (kind === "amend") void scm.amend();
+                else if (kind === "force-push")
+                  void sourceControl.runRemoteAction("force-push");
+              }}
+            >
+              {pendingRisky?.kind === "amend" ? "Amend" : "Force Push"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

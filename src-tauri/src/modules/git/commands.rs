@@ -155,6 +155,20 @@ pub async fn git_commit(
 }
 
 #[tauri::command]
+pub async fn git_commit_amend(
+    repo_root: String,
+    message: String,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<GitCommitResult, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::commit_amend(r, &repo_root, &message, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn git_fetch(
     repo_root: String,
     workspace: Option<WorkspaceEnv>,
@@ -163,6 +177,19 @@ pub async fn git_fetch(
     let workspace = WorkspaceEnv::from_option(workspace);
     blocking(app, move |r| {
         operations::fetch(r, &repo_root, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_fetch_prune(
+    repo_root: String,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::fetch_prune(r, &repo_root, &workspace).map_err(Into::into)
     })
     .await
 }
@@ -181,6 +208,19 @@ pub async fn git_pull_ff_only(
 }
 
 #[tauri::command]
+pub async fn git_pull_rebase(
+    repo_root: String,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::pull_rebase(r, &repo_root, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn git_push(
     repo_root: String,
     workspace: Option<WorkspaceEnv>,
@@ -189,6 +229,19 @@ pub async fn git_push(
     let workspace = WorkspaceEnv::from_option(workspace);
     blocking(app, move |r| {
         operations::push(r, &repo_root, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
+pub async fn git_push_force_with_lease(
+    repo_root: String,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<GitPushResult, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::push_force_with_lease(r, &repo_root, &workspace).map_err(Into::into)
     })
     .await
 }

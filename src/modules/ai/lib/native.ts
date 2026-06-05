@@ -304,8 +304,19 @@ export const native = {
       message,
       workspace: currentWorkspaceEnv(),
     }),
+  gitCommitAmend: (repoRoot: string, message: string) =>
+    invoke<GitCommitResult>("git_commit_amend", {
+      repoRoot,
+      message,
+      workspace: currentWorkspaceEnv(),
+    }),
   gitFetch: (repoRoot: string) =>
     invoke<void>("git_fetch", {
+      repoRoot,
+      workspace: currentWorkspaceEnv(),
+    }),
+  gitFetchPrune: (repoRoot: string) =>
+    invoke<void>("git_fetch_prune", {
       repoRoot,
       workspace: currentWorkspaceEnv(),
     }),
@@ -314,8 +325,18 @@ export const native = {
       repoRoot,
       workspace: currentWorkspaceEnv(),
     }),
+  gitPullRebase: (repoRoot: string) =>
+    invoke<void>("git_pull_rebase", {
+      repoRoot,
+      workspace: currentWorkspaceEnv(),
+    }),
   gitPush: (repoRoot: string) =>
     invoke<GitPushResult>("git_push", {
+      repoRoot,
+      workspace: currentWorkspaceEnv(),
+    }),
+  gitPushForceWithLease: (repoRoot: string) =>
+    invoke<GitPushResult>("git_push_force_with_lease", {
       repoRoot,
       workspace: currentWorkspaceEnv(),
     }),
