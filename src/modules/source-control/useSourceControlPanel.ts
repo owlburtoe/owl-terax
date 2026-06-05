@@ -15,6 +15,8 @@ import {
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { SourceControlSummary } from "./useSourceControl";
+import { runCommitThenRemote } from "./hooks/useSourceControlActions";
+import { isHeadLikelyPublished } from "./types/actions";
 import {
   deriveSourceControlPanelState,
   type SourceControlPanelState as PanelStateValue,
@@ -110,7 +112,12 @@ type SourceControlPanelState = {
   stageAllEntries: () => Promise<void>;
   unstageAllEntries: () => Promise<void>;
   generateCommitMessage: () => Promise<void>;
-  commit: () => Promise<void>;
+  commit: () => Promise<boolean>;
+  amend: () => Promise<void>;
+  commitAll: () => Promise<void>;
+  commitAndPush: () => Promise<void>;
+  commitAndSync: () => Promise<void>;
+  headLikelyPublished: boolean;
   push: () => Promise<void>;
 };
 
@@ -951,8 +958,8 @@ export function useSourceControlPanel(
     stagedEntries,
   ]);
 
-  const commit = useCallback(async () => {
-    if (!repo || summary.busyAction) return;
+  const commit = useCallback(async (): Promise<boolean> => {
+    if (!repo || summary.busyAction) return false;
     setLocalActionBusy("commit");
     setActionMessage(null);
     setActionError(null);
@@ -964,12 +971,74 @@ export function useSourceControlPanel(
       );
       invalidateRepoDiffs(repo.repoRoot);
       await summary.refresh({ remote: "never" });
+      return true;
+    } catch (error) {
+      setActionError(normalizeError(error));
+      return false;
+    } finally {
+      setLocalActionBusy(null);
+    }
+  }, [commitMessage, repo, summary]);
+
+  const amend = useCallback(async () => {
+    if (!repo || summary.busyAction) return;
+    if (commitMessage.trim().length === 0) {
+      setActionError("Commit message cannot be empty");
+      return;
+    }
+    setLocalActionBusy("commit");
+    setActionMessage(null);
+    setActionError(null);
+    try {
+      const result = await native.gitCommitAmend(repo.repoRoot, commitMessage);
+      setCommitMessage("");
+      setActionMessage(
+        `Amended ${result.commitSha.slice(0, 7)} ${result.summary}`,
+      );
+      invalidateRepoDiffs(repo.repoRoot);
+      await summary.refresh({ remote: "never" });
     } catch (error) {
       setActionError(normalizeError(error));
     } finally {
       setLocalActionBusy(null);
     }
   }, [commitMessage, repo, summary]);
+
+  const commitAll = useCallback(async () => {
+    if (!repo || summary.busyAction) return;
+    const tracked = (status?.changedFiles ?? [])
+      .filter((file) => file.unstaged && !file.untracked)
+      .map((file) => file.path);
+    if (tracked.length > 0) {
+      try {
+        await native.gitStage(repo.repoRoot, tracked);
+      } catch (error) {
+        setActionError(normalizeError(error));
+        return;
+      }
+    }
+    await commit();
+  }, [commit, repo, status, summary.busyAction]);
+
+  const commitAndPush = useCallback(async () => {
+    const result = await runCommitThenRemote(
+      async () => ({ ok: await commit() }),
+      () => summary.runRemoteAction("push"),
+    );
+    if (result.committed && !result.remoteOk && result.error) {
+      setActionError(result.error);
+    }
+  }, [commit, summary]);
+
+  const commitAndSync = useCallback(async () => {
+    const result = await runCommitThenRemote(
+      async () => ({ ok: await commit() }),
+      () => summary.runRemoteAction("sync"),
+    );
+    if (result.committed && !result.remoteOk && result.error) {
+      setActionError(result.error);
+    }
+  }, [commit, summary]);
 
   const push = useCallback(async () => {
     if (!repo) return;
@@ -1004,6 +1073,11 @@ export function useSourceControlPanel(
       }`,
     };
   }, [pendingDiscard]);
+
+  const headLikelyPublished = isHeadLikelyPublished({
+    upstream: status?.upstream ?? null,
+    ahead: status?.ahead ?? null,
+  });
 
   return {
     panelState,
@@ -1046,6 +1120,11 @@ export function useSourceControlPanel(
     unstageAllEntries,
     generateCommitMessage,
     commit,
+    amend,
+    commitAll,
+    commitAndPush,
+    commitAndSync,
+    headLikelyPublished,
     push,
   };
 }
