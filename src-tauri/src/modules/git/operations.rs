@@ -45,7 +45,6 @@ fn classify_pull_rebase_failure(stderr: &str) -> GitError {
     }
 }
 
-#[allow(dead_code)]
 fn classify_force_push_failure(stderr: &str) -> GitError {
     let s = stderr.to_ascii_lowercase();
     if s.contains("stale info") || (s.contains("[rejected]") && s.contains("->")) {
@@ -531,6 +530,46 @@ pub fn push(
         NETWORK_TIMEOUT_SECS,
     )?;
     ensure_success(&output, "git push failed")?;
+
+    let upstream = upstream.unwrap();
+    let (remote, branch) = split_upstream(&upstream);
+    Ok(GitPushResult {
+        remote,
+        branch,
+        pushed: true,
+    })
+}
+
+pub fn push_force_with_lease(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<GitPushResult> {
+    let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
+    ensure_git_available(&repo_root.workspace)?;
+
+    let upstream = git_stdout_line_opt(
+        &repo_root.workspace,
+        &repo_root.git_path,
+        ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"],
+    )?;
+    if upstream.is_none() {
+        return Err(GitError::NoUpstream);
+    }
+
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        ["push", "--force-with-lease"],
+        NETWORK_TIMEOUT_SECS,
+    )?;
+    if output.timed_out {
+        return Err(GitError::TimedOut("git push --force-with-lease"));
+    }
+    if output.exit_code != Some(0) {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(classify_force_push_failure(&stderr));
+    }
 
     let upstream = upstream.unwrap();
     let (remote, branch) = split_upstream(&upstream);
@@ -1069,7 +1108,7 @@ fn pathspec(repo_root: &Path, absolute: &Path) -> String {
 mod tests {
     use super::{
         classify_ff_pull_failure, classify_force_push_failure, classify_pull_rebase_failure,
-        commit_amend, stage,
+        commit_amend, push_force_with_lease, stage,
     };
     use crate::modules::git::errors::GitError;
     use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
@@ -1157,6 +1196,56 @@ mod tests {
             "error: cannot pull with rebase: You have unstaged changes.",
         );
         assert!(matches!(err, GitError::CommandFailed { .. }));
+    }
+
+    /// Build a bare origin + a clone with upstream tracking. Returns the clone harness.
+    fn clone_with_upstream() -> (
+        WorkspaceRegistry,
+        String,
+        WorkspaceEnv,
+        tempfile::TempDir,
+        tempfile::TempDir,
+    ) {
+        let origin = tempfile::tempdir().unwrap();
+        git(origin.path(), &["init", "-q", "--bare", "-b", "main"]);
+        let work = tempfile::tempdir().unwrap();
+        git(work.path(), &["clone", "-q", origin.path().to_str().unwrap(), "."]);
+        git(work.path(), &["config", "user.email", "test@terax.dev"]);
+        git(work.path(), &["config", "user.name", "Terax Test"]);
+        std::fs::write(work.path().join("a.txt"), "one\n").unwrap();
+        git(work.path(), &["add", "a.txt"]);
+        git(work.path(), &["commit", "-q", "-m", "chore: initial"]);
+        git(work.path(), &["push", "-q", "-u", "origin", "main"]);
+        let registry = WorkspaceRegistry::default();
+        let root = registry.authorize(work.path()).unwrap();
+        (
+            registry,
+            root.to_string_lossy().into_owned(),
+            WorkspaceEnv::Local,
+            origin,
+            work,
+        )
+    }
+
+    #[test]
+    fn force_push_rejected_when_lease_is_stale() {
+        let (registry, root, env, origin, work) = clone_with_upstream();
+        // Another clone advances origin behind our back, so our lease goes stale.
+        let other = tempfile::tempdir().unwrap();
+        git(other.path(), &["clone", "-q", origin.path().to_str().unwrap(), "."]);
+        git(other.path(), &["config", "user.email", "o@terax.dev"]);
+        git(other.path(), &["config", "user.name", "Other"]);
+        std::fs::write(other.path().join("b.txt"), "x\n").unwrap();
+        git(other.path(), &["add", "b.txt"]);
+        git(other.path(), &["commit", "-q", "-m", "chore: other"]);
+        git(other.path(), &["push", "-q", "origin", "main"]);
+
+        // We rewrite our local commit but never fetched the new origin tip.
+        std::fs::write(work.path().join("a.txt"), "two\n").unwrap();
+        git(work.path(), &["commit", "-q", "-am", "chore: local rewrite"]);
+
+        let err = push_force_with_lease(&registry, &root, &env).unwrap_err();
+        assert!(matches!(err, GitError::ForcePushRejected));
     }
 
     #[test]

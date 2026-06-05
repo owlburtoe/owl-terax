@@ -107,7 +107,7 @@ pub struct GitLogEntry {
     pub deletions: u32,
 }
 
-#[derive(Serialize)]
+#[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitPushResult {
     pub remote: Option<String>,
