@@ -11,7 +11,14 @@ const AUTO_FETCH_LRU_LIMIT = 16;
 const FOCUS_REFRESH_MIN_INTERVAL_MS = 1500;
 
 export type SourceControlRefreshMode = "auto" | "always" | "never";
-export type SourceControlRemoteAction = "fetch" | "pull" | "push";
+export type SourceControlRemoteAction =
+  | "fetch"
+  | "pull"
+  | "push"
+  | "force-push"
+  | "pull-rebase"
+  | "fetch-prune"
+  | "sync";
 export type SourceControlRemoteActionMode =
   | "contextual"
   | SourceControlRemoteAction;
@@ -71,6 +78,16 @@ function normalizeError(error: unknown): string {
     if (typeof message === "string") return message;
   }
   return "Unknown source control error";
+}
+
+export type SyncPhase = "fetch" | "pull" | "push";
+
+export function syncPhaseLabel(phase: SyncPhase): string {
+  return phase === "fetch"
+    ? "Fetch failed"
+    : phase === "pull"
+      ? "Pull failed"
+      : "Push failed";
 }
 
 function getContextualAction(
@@ -388,10 +405,36 @@ export function useSourceControl(
         if (action === "fetch") {
           await native.gitFetch(repo.repoRoot);
           touchAutoFetch(autoFetchByRepoRef.current, repo.repoRoot);
+        } else if (action === "fetch-prune") {
+          await native.gitFetchPrune(repo.repoRoot);
+          touchAutoFetch(autoFetchByRepoRef.current, repo.repoRoot);
         } else if (action === "pull") {
-          await native.gitFetch(repo.repoRoot);
+          await native.gitFetchPrune(repo.repoRoot);
           touchAutoFetch(autoFetchByRepoRef.current, repo.repoRoot);
           await native.gitPullFfOnly(repo.repoRoot);
+        } else if (action === "pull-rebase") {
+          await native.gitFetchPrune(repo.repoRoot);
+          touchAutoFetch(autoFetchByRepoRef.current, repo.repoRoot);
+          await native.gitPullRebase(repo.repoRoot);
+        } else if (action === "force-push") {
+          await native.gitPushForceWithLease(repo.repoRoot);
+        } else if (action === "sync") {
+          try {
+            await native.gitFetchPrune(repo.repoRoot);
+          } catch (e) {
+            throw new Error(`${syncPhaseLabel("fetch")}: ${normalizeError(e)}`);
+          }
+          touchAutoFetch(autoFetchByRepoRef.current, repo.repoRoot);
+          try {
+            await native.gitPullFfOnly(repo.repoRoot);
+          } catch (e) {
+            throw new Error(`${syncPhaseLabel("pull")}: ${normalizeError(e)}`);
+          }
+          try {
+            await native.gitPush(repo.repoRoot);
+          } catch (e) {
+            throw new Error(`${syncPhaseLabel("push")}: ${normalizeError(e)}`);
+          }
         } else {
           await native.gitPush(repo.repoRoot);
         }
