@@ -17,6 +17,47 @@ use crate::modules::git::utils::{
 };
 use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
 
+#[allow(dead_code)]
+fn classify_ff_pull_failure(stderr: &str) -> GitError {
+    let s = stderr.to_ascii_lowercase();
+    if s.contains("not possible to fast-forward") || s.contains("non-fast-forward") {
+        GitError::NotFastForward
+    } else {
+        GitError::command("git pull --ff-only failed", stderr.trim().to_string())
+    }
+}
+
+#[allow(dead_code)]
+fn classify_pull_rebase_failure(stderr: &str) -> GitError {
+    let s = stderr.to_ascii_lowercase();
+    if s.contains("could not apply") || s.contains("conflict") || s.contains("needs merge") {
+        GitError::RebaseConflict
+    } else if s.contains("cannot pull with rebase")
+        || s.contains("unstaged changes")
+        || s.contains("uncommitted changes")
+    {
+        GitError::command(
+            "git pull --rebase",
+            "you have local changes; commit or stash them first",
+        )
+    } else {
+        GitError::command("git pull --rebase failed", stderr.trim().to_string())
+    }
+}
+
+#[allow(dead_code)]
+fn classify_force_push_failure(stderr: &str) -> GitError {
+    let s = stderr.to_ascii_lowercase();
+    if s.contains("stale info") || (s.contains("[rejected]") && s.contains("->")) {
+        GitError::ForcePushRejected
+    } else {
+        GitError::command(
+            "git push --force-with-lease failed",
+            stderr.trim().to_string(),
+        )
+    }
+}
+
 pub fn resolve_repo(
     registry: &WorkspaceRegistry,
     cwd: &str,
@@ -964,4 +1005,42 @@ fn pathspec(repo_root: &Path, absolute: &Path) -> String {
         .strip_prefix(repo_root)
         .map(|rel| rel.to_string_lossy().replace('\\', "/"))
         .unwrap_or_else(|_| absolute.to_string_lossy().replace('\\', "/"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        classify_ff_pull_failure, classify_force_push_failure, classify_pull_rebase_failure,
+    };
+    use crate::modules::git::errors::GitError;
+
+    #[test]
+    fn ff_pull_non_fast_forward_maps_to_not_fast_forward() {
+        let err = classify_ff_pull_failure("fatal: Not possible to fast-forward, aborting.");
+        assert!(matches!(err, GitError::NotFastForward));
+    }
+
+    #[test]
+    fn rebase_conflict_maps_to_rebase_conflict() {
+        let err = classify_pull_rebase_failure(
+            "error: could not apply a1b2c3d... CONFLICT (content): Merge conflict in foo.rs",
+        );
+        assert!(matches!(err, GitError::RebaseConflict));
+    }
+
+    #[test]
+    fn rebase_with_local_changes_is_not_a_conflict() {
+        let err = classify_pull_rebase_failure(
+            "error: cannot pull with rebase: You have unstaged changes.",
+        );
+        assert!(matches!(err, GitError::CommandFailed { .. }));
+    }
+
+    #[test]
+    fn stale_lease_maps_to_force_push_rejected() {
+        let err = classify_force_push_failure(
+            "! [rejected] main -> main (stale info)\nerror: failed to push some refs",
+        );
+        assert!(matches!(err, GitError::ForcePushRejected));
+    }
 }
