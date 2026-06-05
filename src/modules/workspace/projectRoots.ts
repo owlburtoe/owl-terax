@@ -35,3 +35,16 @@ export function resolveLaunchRoots(input: {
   if (input.cliDir) return [input.cliDir];
   return input.restoredRoots;
 }
+
+/**
+ * Whether a project-root transition should auto-`cd` open terminals into the
+ * new root. Fires only when switching to a real, different project. Closing a
+ * folder (`next === null`) or re-selecting the same root leaves terminals where
+ * they are.
+ */
+export function shouldSyncTerminalsToRoot(
+  prev: string | null,
+  next: string | null,
+): boolean {
+  return !!next && next !== prev;
+}

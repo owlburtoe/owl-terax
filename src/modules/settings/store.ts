@@ -387,6 +387,18 @@ export async function loadPreferences(): Promise<Preferences> {
   };
 }
 
+/**
+ * Single-key read of the persisted project roots. Used at boot to seed the
+ * initial terminal cwd before first paint — cheaper than `loadPreferences`,
+ * which fetches every setting in one `entries()` roundtrip.
+ */
+export async function loadPersistedProjectRoots(): Promise<string[]> {
+  return (
+    (await store.get<string[]>(KEY_PROJECT_ROOTS)) ??
+    DEFAULT_PREFERENCES.projectRoots
+  );
+}
+
 export async function setTheme(value: ThemePref): Promise<void> {
   await writePref(KEY_THEME, value);
 }

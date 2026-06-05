@@ -5,6 +5,7 @@ import type { Tab, TerminalTab } from "./useTabs";
 const home = "/home/user";
 const defaultCwd = "/home/user/projects";
 const lastCwd = "/home/user/work";
+const projectRoot = "/home/user/repo";
 
 function termTab(cwd: string): Tab {
   return {
@@ -31,49 +32,67 @@ function editorTab(): Tab {
 describe("resolveInheritedCwd — priority chain", () => {
   it("returns active terminal cwd first", () => {
     expect(
-      resolveInheritedCwd(termTab("/active"), lastCwd, defaultCwd, home),
+      resolveInheritedCwd(termTab("/active"), lastCwd, projectRoot, defaultCwd, home),
     ).toBe("/active");
   });
 
   it("falls back to lastTerminalCwd when active tab is an editor", () => {
     expect(
-      resolveInheritedCwd(editorTab(), lastCwd, defaultCwd, home),
+      resolveInheritedCwd(editorTab(), lastCwd, projectRoot, defaultCwd, home),
     ).toBe(lastCwd);
   });
 
-  it("falls back to defaultCwd when lastTerminalCwd is null", () => {
+  it("falls back to the project root when lastTerminalCwd is null", () => {
     expect(
-      resolveInheritedCwd(editorTab(), null, defaultCwd, home),
+      resolveInheritedCwd(editorTab(), null, projectRoot, defaultCwd, home),
+    ).toBe(projectRoot);
+  });
+
+  it("prefers the project root over the configured default directory", () => {
+    expect(
+      resolveInheritedCwd(editorTab(), null, projectRoot, defaultCwd, home),
+    ).toBe(projectRoot);
+  });
+
+  it("falls back to defaultCwd when no project is open", () => {
+    expect(
+      resolveInheritedCwd(editorTab(), null, null, defaultCwd, home),
     ).toBe(defaultCwd);
   });
 
-  it("falls back to home when both lastTerminalCwd and defaultCwd are absent", () => {
+  it("falls back to home when project root, lastTerminalCwd and defaultCwd are absent", () => {
     expect(
-      resolveInheritedCwd(editorTab(), null, null, home),
+      resolveInheritedCwd(editorTab(), null, null, null, home),
     ).toBe(home);
   });
 
   it("returns undefined when all sources are absent", () => {
     expect(
-      resolveInheritedCwd(undefined, null, null, null),
+      resolveInheritedCwd(undefined, null, null, null, null),
     ).toBeUndefined();
+  });
+
+  it("treats empty string project root as absent (falls through to defaultCwd)", () => {
+    expect(
+      resolveInheritedCwd(editorTab(), null, "", defaultCwd, home),
+    ).toBe(defaultCwd);
   });
 
   it("treats empty string defaultCwd as absent (falls through to home)", () => {
     expect(
-      resolveInheritedCwd(editorTab(), null, "", home),
+      resolveInheritedCwd(editorTab(), null, null, "", home),
     ).toBe(home);
   });
 
-  it("treats empty string lastTerminalCwd as absent (falls through to defaultCwd)", () => {
+  it("treats empty string lastTerminalCwd as absent (falls through to project root)", () => {
     expect(
-      resolveInheritedCwd(editorTab(), "", defaultCwd, home),
-    ).toBe(defaultCwd);
+      resolveInheritedCwd(editorTab(), "", projectRoot, defaultCwd, home),
+    ).toBe(projectRoot);
   });
 
   it("returns undefined when active tab is undefined and all sources are null", () => {
     expect(
-      resolveInheritedCwd(undefined, null, undefined, null),
+      resolveInheritedCwd(undefined, null, null, undefined, null),
     ).toBeUndefined();
   });
 });

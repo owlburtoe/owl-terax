@@ -11,6 +11,7 @@ import ReactDOM from "react-dom/client";
 import App from "./app/App";
 import { initLaunchDir } from "./lib/launchDir";
 import { USE_CUSTOM_WINDOW_CONTROLS } from "./lib/platform";
+import { initInitialProjectRoot } from "./modules/workspace/initialProjectRoot";
 
 if (USE_CUSTOM_WINDOW_CONTROLS) {
   document.documentElement.dataset.chrome = "borderless";
@@ -19,8 +20,11 @@ if (USE_CUSTOM_WINDOW_CONTROLS) {
 // Reap PTY sessions orphaned by a prior webview load before any tab spawns.
 await invoke("pty_close_all").catch(() => {});
 
-// Seed before first paint so default tab mounts at target cwd (no flicker).
+// Seed before first paint so the default tab mounts at the target cwd (no
+// flicker): the launch dir, then the restored project root (which takes
+// precedence when a folder is open).
 await initLaunchDir();
+await initInitialProjectRoot();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <App />,
