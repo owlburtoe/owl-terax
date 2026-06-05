@@ -47,6 +47,7 @@ import {
   type GitHistorySearchHandle,
 } from "@/modules/git-history";
 import { getLaunchDir } from "@/lib/launchDir";
+import { getInitialProjectRoot } from "@/modules/workspace/initialProjectRoot";
 import { quoteShellArg } from "@/lib/shellQuote";
 import { useZoom } from "@/lib/useZoom";
 import { type FileExplorerHandle } from "@/modules/explorer";
@@ -86,6 +87,7 @@ import {
   findLeafCwd,
   focusTerminalTabAfterOpen,
   hasLeaf,
+  isLeafIdle,
   leafIds,
   respawnSession,
   TerminalStack,
@@ -111,6 +113,7 @@ import {
   useWorkspaceEnvStore,
   type WorkspaceEnv,
 } from "@/modules/workspace";
+import { shouldSyncTerminalsToRoot } from "@/modules/workspace/projectRoots";
 import { useProjectRoots } from "@/modules/workspace/useProjectRoots";
 import { invoke } from "@tauri-apps/api/core";
 import { homeDir } from "@tauri-apps/api/path";
@@ -161,8 +164,10 @@ export default function App() {
   const defaultTerminalCwd = usePreferencesStore(
     (s) => s.defaultTerminalCwd,
   );
+  // A restored/open project root wins over the process launch dir so the first
+  // terminal opens in the project, not the user's home directory.
   const initialCwd =
-    getLaunchDir() || defaultTerminalCwd || undefined;
+    getInitialProjectRoot() || getLaunchDir() || defaultTerminalCwd || undefined;
 
   const {
     tabs,
@@ -617,17 +622,39 @@ export default function App() {
     };
   }, [openFileTab]);
 
-  const { inheritedCwdForNewTab } = useWorkspaceCwd(
-    activeTab,
-    launchCwd ?? home,
-    defaultTerminalCwd || null,
-  );
   const {
     primaryRoot,
     isRestoring: isRestoringWorkspace,
     openFolder,
   } = useProjectRoots();
   const explorerRoot = primaryRoot; // pinned project root; null = no folder open
+  const { inheritedCwdForNewTab } = useWorkspaceCwd(
+    activeTab,
+    launchCwd ?? home,
+    defaultTerminalCwd || null,
+    primaryRoot,
+  );
+
+  // Follow the project: when the open root changes, cd every terminal that is
+  // sitting at a prompt into the new root. Terminals running a command are left
+  // alone (injecting `cd` would land in the running program's stdin), and new
+  // terminals already inherit the root via `inheritedCwdForNewTab`. Seeded with
+  // the launch root so the initial restore doesn't re-cd a terminal that the
+  // boot seed already opened there.
+  const prevSyncedRootRef = useRef<string | null>(getInitialProjectRoot() ?? null);
+  useEffect(() => {
+    if (isRestoringWorkspace) return; // wait for the launch-time restore to settle
+    const prev = prevSyncedRootRef.current;
+    prevSyncedRootRef.current = primaryRoot;
+    if (!primaryRoot || !shouldSyncTerminalsToRoot(prev, primaryRoot)) return;
+    const cmd = `cd ${quoteShellArg(primaryRoot)}\r`;
+    for (const t of tabsRef.current) {
+      if (t.kind !== "terminal") continue;
+      for (const leafId of leafIds(t.paneTree)) {
+        if (isLeafIdle(leafId)) writeToSession(leafId, cmd);
+      }
+    }
+  }, [primaryRoot, isRestoringWorkspace]);
 
   useEffect(() => {
     setActiveSearchAddon(

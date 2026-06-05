@@ -10,6 +10,7 @@ export function useWorkspaceCwd(
   activeTab: Tab | undefined,
   home: string | null,
   defaultCwd?: string | null,
+  projectRoot?: string | null,
 ): Result {
   const lastTerminalCwd = useRef<string | null>(null);
 
@@ -20,11 +21,17 @@ export function useWorkspaceCwd(
   }, [activeTab]);
 
   const inheritedCwdForNewTab = useCallback((): string | undefined => {
-    // Editor tabs inherit the last terminal's cwd (or workspace home), not
-    // the file's folder — opening a new terminal from a file shouldn't
-    // hijack the user's working directory context.
-    return resolveInheritedCwd(activeTab, lastTerminalCwd.current, defaultCwd, home);
-  }, [activeTab, defaultCwd, home]);
+    // Editor tabs inherit the last terminal's cwd (or the open project root /
+    // workspace home), not the file's folder — opening a new terminal from a
+    // file shouldn't hijack the user's working directory context.
+    return resolveInheritedCwd(
+      activeTab,
+      lastTerminalCwd.current,
+      projectRoot ?? null,
+      defaultCwd,
+      home,
+    );
+  }, [activeTab, defaultCwd, home, projectRoot]);
 
   return { inheritedCwdForNewTab };
 }

@@ -7,6 +7,7 @@ import {
   createShellIntegrationState,
   registerCwdHandler,
   registerPromptTracker,
+  type ShellIntegrationState,
 } from "./osc-handlers";
 import { openPty, type PtySession } from "./pty-bridge";
 import {
@@ -61,6 +62,11 @@ type Session = {
   /** True once OSC 133 D (command end) has fired at least once. Guards against
    *  showing the shell's initial prompt as if it were command output. */
   hasCommandOutput: boolean;
+  /** Live shell-integration state from the most recent slot binding. Used to
+   *  tell whether the shell is sitting at a prompt (idle) vs running a command,
+   *  e.g. before auto-cd'ing the terminal on a project switch. Null until the
+   *  leaf has been bound to a renderer slot at least once. */
+  shellState: ShellIntegrationState | null;
 };
 
 const sessions = new Map<number, Session>();
@@ -103,6 +109,20 @@ export function writeToSession(leafId: number, data: string): boolean {
   if (!s || !s.pty) return false;
   void s.pty.write(data);
   return true;
+}
+
+/**
+ * True when the leaf's shell is alive and sitting at a prompt (not running a
+ * command). Used to decide whether it's safe to inject input such as an
+ * auto-`cd` on a project switch — writing into a busy shell would land in the
+ * running program's stdin. A leaf with no shell integration yet (never bound,
+ * or a shell that doesn't emit OSC 133) reports idle, which is correct for a
+ * fresh prompt; the residual risk is a non-integrated shell mid-TUI.
+ */
+export function isLeafIdle(leafId: number): boolean {
+  const s = sessions.get(leafId);
+  if (!s || !s.pty || s.shellExited) return false;
+  return !s.shellState?.inCommand;
 }
 
 export function leafIdForPty(ptyId: number): number | null {
@@ -176,6 +196,7 @@ function ensureSession(leafId: number, initialCwd?: string): Session {
     previewRing: "",
     previewTimer: null,
     hasCommandOutput: false,
+    shellState: null,
   };
   sessions.set(leafId, session);
 
@@ -291,6 +312,7 @@ function bindLeafToSlot(leafId: number, s: Session): void {
       // 7 emitted by untrusted command output (remote SSH, `cat` of an
       // attacker file, etc.).
       const shellState = createShellIntegrationState();
+      s.shellState = shellState;
       const prompt = registerPromptTracker(term, shellState, () => {
         s.hasCommandOutput = true;
       });
