@@ -17,7 +17,6 @@ use crate::modules::git::utils::{
 };
 use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
 
-#[allow(dead_code)]
 fn classify_ff_pull_failure(stderr: &str) -> GitError {
     let s = stderr.to_ascii_lowercase();
     if s.contains("not possible to fast-forward") || s.contains("non-fast-forward") {
@@ -27,7 +26,6 @@ fn classify_ff_pull_failure(stderr: &str) -> GitError {
     }
 }
 
-#[allow(dead_code)]
 fn classify_pull_rebase_failure(stderr: &str) -> GitError {
     let s = stderr.to_ascii_lowercase();
     if s.contains("could not apply") || s.contains("conflict") || s.contains("needs merge") {
@@ -1075,7 +1073,37 @@ pub fn pull_ff_only(
         ["pull", "--ff-only"],
         NETWORK_TIMEOUT_SECS,
     )?;
-    ensure_success(&output, "git pull --ff-only failed")
+    if output.timed_out {
+        return Err(GitError::TimedOut("git pull --ff-only"));
+    }
+    if output.exit_code != Some(0) {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(classify_ff_pull_failure(&stderr));
+    }
+    Ok(())
+}
+
+pub fn pull_rebase(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<()> {
+    let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
+    ensure_git_available(&repo_root.workspace)?;
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        ["pull", "--rebase"],
+        NETWORK_TIMEOUT_SECS,
+    )?;
+    if output.timed_out {
+        return Err(GitError::TimedOut("git pull --rebase"));
+    }
+    if output.exit_code != Some(0) {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(classify_pull_rebase_failure(&stderr));
+    }
+    Ok(())
 }
 
 fn nothing_to_commit(output: &GitOutput) -> bool {

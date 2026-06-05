@@ -158,6 +158,7 @@ pub fn run() {
             git::commands::git_fetch,
             git::commands::git_fetch_prune,
             git::commands::git_pull_ff_only,
+            git::commands::git_pull_rebase,
             git::commands::git_push,
             git::commands::git_push_force_with_lease,
             git::commands::git_log,
