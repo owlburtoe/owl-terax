@@ -465,6 +465,48 @@ pub fn commit(
     })
 }
 
+pub fn commit_amend(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    message: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<GitCommitResult> {
+    let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
+    ensure_git_available(&repo_root.workspace)?;
+    let trimmed = message.trim();
+    if trimmed.is_empty() {
+        return Err(GitError::EmptyCommitMessage);
+    }
+
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        [
+            OsStr::new("commit"),
+            OsStr::new("--amend"),
+            OsStr::new("-m"),
+            OsStr::new(trimmed),
+        ],
+        DEFAULT_TIMEOUT_SECS,
+    )?;
+    ensure_success(&output, "git commit --amend failed")?;
+
+    let combined = git_stdout_lines(
+        &repo_root.workspace,
+        &repo_root.git_path,
+        ["show", "-s", "--format=%H%n%s", "HEAD"],
+    )?;
+    let sha = combined.first().cloned().ok_or(GitError::CommandFailed {
+        context: "failed to resolve amended commit sha",
+        detail: String::new(),
+    })?;
+    let summary = combined.get(1).cloned().unwrap_or_default();
+    Ok(GitCommitResult {
+        commit_sha: sha,
+        summary,
+    })
+}
+
 pub fn push(
     registry: &WorkspaceRegistry,
     repo_root: &str,
@@ -1027,8 +1069,73 @@ fn pathspec(repo_root: &Path, absolute: &Path) -> String {
 mod tests {
     use super::{
         classify_ff_pull_failure, classify_force_push_failure, classify_pull_rebase_failure,
+        commit_amend, stage,
     };
     use crate::modules::git::errors::GitError;
+    use crate::modules::workspace::{WorkspaceEnv, WorkspaceRegistry};
+    use std::process::Command;
+
+    fn git(dir: &std::path::Path, args: &[&str]) {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .status()
+            .expect("git runs");
+        assert!(status.success(), "git {args:?} failed");
+    }
+
+    /// Create an authorized temp repo with one initial commit.
+    fn repo_with_initial_commit() -> (WorkspaceRegistry, String, WorkspaceEnv, tempfile::TempDir) {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path();
+        git(path, &["init", "-q", "-b", "main"]);
+        git(path, &["config", "user.email", "test@terax.dev"]);
+        git(path, &["config", "user.name", "Terax Test"]);
+        std::fs::write(path.join("a.txt"), "one\n").unwrap();
+        git(path, &["add", "a.txt"]);
+        git(path, &["commit", "-q", "-m", "chore: initial"]);
+        let registry = WorkspaceRegistry::default();
+        let root = registry.authorize(path).unwrap();
+        (
+            registry,
+            root.to_string_lossy().into_owned(),
+            WorkspaceEnv::Local,
+            dir,
+        )
+    }
+
+    fn head_subject(dir: &std::path::Path) -> String {
+        let out = Command::new("git")
+            .args(["show", "-s", "--format=%s", "HEAD"])
+            .current_dir(dir)
+            .output()
+            .unwrap();
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    #[test]
+    fn amend_rewrites_head_keeps_single_commit() {
+        let (registry, root, env, dir) = repo_with_initial_commit();
+        std::fs::write(dir.path().join("a.txt"), "two\n").unwrap();
+        stage(&registry, &root, &["a.txt".to_string()], &env).unwrap();
+
+        commit_amend(&registry, &root, "chore: amended subject", &env).unwrap();
+
+        assert_eq!(head_subject(dir.path()), "chore: amended subject");
+        let count = Command::new("git")
+            .args(["rev-list", "--count", "HEAD"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        assert_eq!(String::from_utf8_lossy(&count.stdout).trim(), "1");
+    }
+
+    #[test]
+    fn amend_empty_message_is_rejected() {
+        let (registry, root, env, _dir) = repo_with_initial_commit();
+        let result = commit_amend(&registry, &root, "   ", &env);
+        assert!(matches!(result, Err(GitError::EmptyCommitMessage)));
+    }
 
     #[test]
     fn ff_pull_non_fast_forward_maps_to_not_fast_forward() {

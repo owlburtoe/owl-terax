@@ -155,6 +155,20 @@ pub async fn git_commit(
 }
 
 #[tauri::command]
+pub async fn git_commit_amend(
+    repo_root: String,
+    message: String,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<GitCommitResult, String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::commit_amend(r, &repo_root, &message, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn git_fetch(
     repo_root: String,
     workspace: Option<WorkspaceEnv>,
