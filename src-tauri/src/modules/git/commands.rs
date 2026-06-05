@@ -168,6 +168,19 @@ pub async fn git_fetch(
 }
 
 #[tauri::command]
+pub async fn git_fetch_prune(
+    repo_root: String,
+    workspace: Option<WorkspaceEnv>,
+    app: AppHandle,
+) -> Result<(), String> {
+    let workspace = WorkspaceEnv::from_option(workspace);
+    blocking(app, move |r| {
+        operations::fetch_prune(r, &repo_root, &workspace).map_err(Into::into)
+    })
+    .await
+}
+
+#[tauri::command]
 pub async fn git_pull_ff_only(
     repo_root: String,
     workspace: Option<WorkspaceEnv>,

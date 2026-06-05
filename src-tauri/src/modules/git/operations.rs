@@ -959,10 +959,26 @@ pub fn fetch(
     let output = run_git(
         &repo_root.workspace,
         Some(&repo_root.git_path),
-        ["fetch", "--prune"],
+        ["fetch"],
         NETWORK_TIMEOUT_SECS,
     )?;
     ensure_success(&output, "git fetch failed")
+}
+
+pub fn fetch_prune(
+    registry: &WorkspaceRegistry,
+    repo_root: &str,
+    workspace: &WorkspaceEnv,
+) -> Result<()> {
+    let repo_root = authorized_repo_root(registry, repo_root, workspace)?;
+    ensure_git_available(&repo_root.workspace)?;
+    let output = run_git(
+        &repo_root.workspace,
+        Some(&repo_root.git_path),
+        ["fetch", "--prune"],
+        NETWORK_TIMEOUT_SECS,
+    )?;
+    ensure_success(&output, "git fetch --prune failed")
 }
 
 pub fn pull_ff_only(
